@@ -60,9 +60,6 @@
 </section>
 <script>
 (() => {
-    const historyApi = window.endfieldPassHistory;
-    if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
-
     const obtainedLabel = "{% t 'characters.obtained' %}";
     const missingLabel = "{% t 'characters.missing' %}";
     const unknownDateLabel = "{% t 'characters.date_unknown' %}";
@@ -97,6 +94,8 @@
     };
 
     const renderCharacters = () => {
+        const historyApi = window.endfieldPassHistory;
+        if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
         const pulls = historyApi.getLatestPulls() || [];
         const obtainedMap = buildObtainedMap(pulls);
         const firstHeroTs = [...pulls]
@@ -143,8 +142,16 @@
         });
     };
 
-    renderCharacters();
-    window.addEventListener("endfieldpass:history-updated", renderCharacters);
+    const bootCharacters = () => {
+        renderCharacters();
+        window.addEventListener("endfieldpass:history-updated", renderCharacters);
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bootCharacters, { once: true });
+    } else {
+        bootCharacters();
+    }
 })();
 </script>
 {% endblock %}

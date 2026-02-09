@@ -108,7 +108,6 @@
 
 <script>
 (() => {
-    const historyApi = window.endfieldPassHistory;
     const formatDate = (ts) => {
         const value = Number(ts) || 0;
         if (!value) return "-";
@@ -293,6 +292,7 @@
     });
 
     const renderDashboard = () => {
+        const historyApi = window.endfieldPassHistory;
         if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
         const pulls = historyApi.getLatestPulls() || [];
         document.querySelectorAll("[data-history-card]").forEach((card) => {
@@ -316,8 +316,16 @@
         });
     };
 
-    renderDashboard();
-    window.addEventListener("endfieldpass:history-updated", renderDashboard);
+    const bootDashboard = () => {
+        renderDashboard();
+        window.addEventListener("endfieldpass:history-updated", renderDashboard);
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bootDashboard, { once: true });
+    } else {
+        bootDashboard();
+    }
 })();
 </script>
 {% endblock %}

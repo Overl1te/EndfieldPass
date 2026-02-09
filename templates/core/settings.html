@@ -112,118 +112,126 @@
 </section>
 <script>
 (() => {
-    const historyApi = window.endfieldPassHistory;
-    if (!historyApi) return;
+    const initSettingsLocalHistory = () => {
+        const historyApi = window.endfieldPassHistory;
+        if (!historyApi) return;
 
-    const exportBtn = document.getElementById("localHistoryExportBtn");
-    const importForm = document.getElementById("localHistoryImportForm");
-    const importInput = document.getElementById("history_file");
-    const cloudExportForms = document.querySelectorAll("[data-cloud-export-form]");
-    const cloudImportForms = document.querySelectorAll("[data-cloud-import-form]");
-    const cloudUrlImportForm = document.getElementById("cloudUrlImportForm");
-    const cloudUrlInput = document.getElementById("cloud_url_remote_ref");
+        const exportBtn = document.getElementById("localHistoryExportBtn");
+        const importForm = document.getElementById("localHistoryImportForm");
+        const importInput = document.getElementById("history_file");
+        const cloudExportForms = document.querySelectorAll("[data-cloud-export-form]");
+        const cloudImportForms = document.querySelectorAll("[data-cloud-import-form]");
+        const cloudUrlImportForm = document.getElementById("cloudUrlImportForm");
+        const cloudUrlInput = document.getElementById("cloud_url_remote_ref");
 
-    const triggerDownload = (filename, content) => {
-        const blob = new Blob([content], { type: "application/json;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = filename;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
+        const triggerDownload = (filename, content) => {
+            const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+        };
+
+        if (exportBtn) {
+            exportBtn.addEventListener("click", (event) => {
+                event.preventDefault();
+                const payload = historyApi.readPayload();
+                if (!payload) return;
+                const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+                triggerDownload(`endfieldpass-history-${timestamp}.json`, JSON.stringify(payload, null, 2));
+            });
+        }
+
+        if (importForm && importInput) {
+            importForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const file = importInput.files && importInput.files[0];
+                if (!file) return;
+
+                let rawText = "";
+                try {
+                    rawText = await file.text();
+                    const payload = JSON.parse(rawText);
+                    const normalized = historyApi.normalizePayload(payload);
+                    if (!normalized) return;
+                    historyApi.writePayload(normalized, "settings_import");
+                    if (typeof historyApi.syncWithCloud === "function") {
+                        await historyApi.syncWithCloud({ force: true, preferPush: true });
+                    }
+                    importInput.value = "";
+                } catch (_) {
+                    // Keep silent to preserve existing simple UI flow.
+                }
+            });
+        }
+
+        cloudExportForms.forEach((form) => {
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const providerInput = form.querySelector('input[name="provider"]');
+                const provider = String(providerInput?.value || "").trim().toLowerCase();
+                const payload = historyApi.readPayload();
+                if (!provider || !payload) return;
+                try {
+                    await fetch("/api/cloud/auto/export", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ provider, payload }),
+                    });
+                } catch (_) {}
+            });
+        });
+
+        cloudImportForms.forEach((form) => {
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const providerInput = form.querySelector('input[name="provider"]');
+                const provider = String(providerInput?.value || "").trim().toLowerCase();
+                if (!provider) return;
+                try {
+                    const response = await fetch("/api/cloud/auto/import", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ provider }),
+                    });
+                    if (!response.ok) return;
+                    const result = await response.json();
+                    const normalized = historyApi.normalizePayload(result?.payload);
+                    if (!normalized) return;
+                    historyApi.writePayload(normalized, "settings_cloud_import");
+                } catch (_) {}
+            });
+        });
+
+        if (cloudUrlImportForm && cloudUrlInput) {
+            cloudUrlImportForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const remoteRef = String(cloudUrlInput.value || "").trim();
+                if (!remoteRef) return;
+                try {
+                    const response = await fetch("/api/cloud/auto/import", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ provider: "url", remote_ref: remoteRef }),
+                    });
+                    if (!response.ok) return;
+                    const result = await response.json();
+                    const normalized = historyApi.normalizePayload(result?.payload);
+                    if (!normalized) return;
+                    historyApi.writePayload(normalized, "settings_cloud_url_import");
+                } catch (_) {}
+            });
+        }
     };
 
-    if (exportBtn) {
-        exportBtn.addEventListener("click", (event) => {
-            event.preventDefault();
-            const payload = historyApi.readPayload();
-            if (!payload) return;
-            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-            triggerDownload(`endfieldpass-history-${timestamp}.json`, JSON.stringify(payload, null, 2));
-        });
-    }
-
-    if (importForm && importInput) {
-        importForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const file = importInput.files && importInput.files[0];
-            if (!file) return;
-
-            let rawText = "";
-            try {
-                rawText = await file.text();
-                const payload = JSON.parse(rawText);
-                const normalized = historyApi.normalizePayload(payload);
-                if (!normalized) return;
-                historyApi.writePayload(normalized, "settings_import");
-                if (typeof historyApi.syncWithCloud === "function") {
-                    await historyApi.syncWithCloud({ force: true, preferPush: true });
-                }
-                importInput.value = "";
-            } catch (_) {
-                // Keep silent to preserve existing simple UI flow.
-            }
-        });
-    }
-
-    cloudExportForms.forEach((form) => {
-        form.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const providerInput = form.querySelector('input[name="provider"]');
-            const provider = String(providerInput?.value || "").trim().toLowerCase();
-            const payload = historyApi.readPayload();
-            if (!provider || !payload) return;
-            try {
-                await fetch("/api/cloud/auto/export", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ provider, payload }),
-                });
-            } catch (_) {}
-        });
-    });
-
-    cloudImportForms.forEach((form) => {
-        form.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const providerInput = form.querySelector('input[name="provider"]');
-            const provider = String(providerInput?.value || "").trim().toLowerCase();
-            if (!provider) return;
-            try {
-                const response = await fetch("/api/cloud/auto/import", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ provider }),
-                });
-                if (!response.ok) return;
-                const result = await response.json();
-                const normalized = historyApi.normalizePayload(result?.payload);
-                if (!normalized) return;
-                historyApi.writePayload(normalized, "settings_cloud_import");
-            } catch (_) {}
-        });
-    });
-
-    if (cloudUrlImportForm && cloudUrlInput) {
-        cloudUrlImportForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const remoteRef = String(cloudUrlInput.value || "").trim();
-            if (!remoteRef) return;
-            try {
-                const response = await fetch("/api/cloud/auto/import", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ provider: "url", remote_ref: remoteRef }),
-                });
-                if (!response.ok) return;
-                const result = await response.json();
-                const normalized = historyApi.normalizePayload(result?.payload);
-                if (!normalized) return;
-                historyApi.writePayload(normalized, "settings_cloud_url_import");
-            } catch (_) {}
-        });
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initSettingsLocalHistory, { once: true });
+    } else {
+        initSettingsLocalHistory();
     }
 })();
 </script>

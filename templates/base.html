@@ -64,6 +64,7 @@
     <script>
     (() => {
         const HISTORY_KEY = "endfieldpass:history_payload_v1";
+        const LEGACY_HISTORY_KEYS = ["endfieldpass:history_payload"];
         const CLOUD_PROVIDER_KEY = "endfieldpass:cloud_provider";
         const LAST_SYNC_TS_KEY = "endfieldpass:last_auto_sync_ts";
         const AUTO_SYNC_COOLDOWN_MS = 25000;
@@ -125,7 +126,20 @@
 
         const normalizePayload = (payload) => {
             if (!payload || typeof payload !== "object") return null;
-            const rawSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+            let rawSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+            if (!rawSessions.length && Array.isArray(payload.items)) {
+                rawSessions = [
+                    {
+                        source_session_id: `legacy-${Date.now()}`,
+                        created_at: new Date().toISOString(),
+                        server_id: "3",
+                        lang: "ru-ru",
+                        status: "done",
+                        error: "",
+                        pulls: payload.items,
+                    },
+                ];
+            }
             const sessions = rawSessions.map((session, index) => normalizeSession(session, index));
             const pullCount = sessions.reduce((total, session) => total + (session.pulls?.length || 0), 0);
             return {
@@ -140,8 +154,17 @@
         const readPayload = () => {
             try {
                 const raw = localStorage.getItem(HISTORY_KEY);
-                if (!raw) return null;
-                return normalizePayload(JSON.parse(raw));
+                if (raw) return normalizePayload(JSON.parse(raw));
+                for (const key of LEGACY_HISTORY_KEYS) {
+                    const legacyRaw = localStorage.getItem(key);
+                    if (!legacyRaw) continue;
+                    const normalized = normalizePayload(JSON.parse(legacyRaw));
+                    if (normalized) {
+                        localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+                        return normalized;
+                    }
+                }
+                return null;
             } catch (_) {
                 return null;
             }
@@ -211,6 +234,13 @@
             return Number.isFinite(createdTs) ? createdTs : 0;
         };
 
+        const payloadHasHistory = (payload) => {
+            const normalized = normalizePayload(payload);
+            if (!normalized) return false;
+            if ((normalized.pull_count || 0) > 0) return true;
+            return (normalized.sessions || []).some((session) => Array.isArray(session.pulls) && session.pulls.length > 0);
+        };
+
         const requestJson = async (url, options = {}) => {
             const response = await fetch(url, options);
             if (!response.ok) {
@@ -274,6 +304,15 @@
             if (!provider) return { ok: true, skipped: true, reason: "no_provider" };
 
             const localPayload = readPayload();
+            const hasLocalHistory = payloadHasHistory(localPayload);
+            if (hasLocalHistory) {
+                if (!preferPush) {
+                    return { ok: true, provider, skipped: true, reason: "local_first" };
+                }
+                await exportToCloud(provider, localPayload);
+                return { ok: true, provider, action: "push" };
+            }
+
             let remotePayload = null;
             try {
                 remotePayload = await importFromCloud(provider);
@@ -281,20 +320,17 @@
                 remotePayload = null;
             }
 
-            const localTs = payloadTimestamp(localPayload);
-            const remoteTs = payloadTimestamp(remotePayload);
-
-            if (remotePayload && (!localPayload || (remoteTs > localTs && !preferPush))) {
+            if (payloadHasHistory(remotePayload)) {
                 writePayload(remotePayload, "cloud_pull");
                 return { ok: true, provider, action: "pull" };
             }
 
-            if (localPayload) {
+            if (preferPush && localPayload) {
                 await exportToCloud(provider, localPayload);
-                return { ok: true, provider, action: "push" };
+                return { ok: true, provider, action: "push_empty" };
             }
 
-            return { ok: true, provider, skipped: true };
+            return { ok: true, provider, skipped: true, reason: "no_history_anywhere" };
         };
 
         window.endfieldPassHistory = {

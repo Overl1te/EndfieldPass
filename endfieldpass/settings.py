@@ -103,11 +103,8 @@ WSGI_APPLICATION = 'endfieldpass.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'имя_базы_данных',
-        'USER': 'имя_пользователя_базы_данных',
-        'PASSWORD': 'пароль_базы_данных',
-        'HOST': 'localhost',
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
