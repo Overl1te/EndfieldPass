@@ -23,9 +23,9 @@
             <h2>{% t "settings.history.title" %}</h2>
             <p>{% t "settings.history.desc" %}</p>
             <div class="settings-actions">
-                <a class="btn" href="{% url 'export_history' %}">{% t "settings.history.export" %}</a>
+                <a class="btn" href="{% url 'export_history' %}" id="localHistoryExportBtn">{% t "settings.history.export" %}</a>
             </div>
-            <form method="post" action="{% url 'import_history' %}" enctype="multipart/form-data" class="settings-import-form">
+            <form method="post" action="{% url 'import_history' %}" enctype="multipart/form-data" class="settings-import-form" id="localHistoryImportForm">
                 {% csrf_token %}
                 <label for="history_file">{% t "settings.history.import_label" %}</label>
                 <input id="history_file" name="history_file" type="file" accept=".json,application/json" required>
@@ -76,12 +76,12 @@
                     <p class="settings-hint">{% t "settings.cloud.expiring_hint" %}</p>
                     {% endif %}
                     <div class="cloud-actions-row">
-                        <form method="post" action="{% url 'cloud_export' %}">
+                        <form method="post" action="{% url 'cloud_export' %}" data-cloud-export-form>
                             {% csrf_token %}
                             <input type="hidden" name="provider" value="{{ card.provider }}">
                             <button type="submit" class="btn">{% t "settings.cloud.sync_to" %}</button>
                         </form>
-                        <form method="post" action="{% url 'cloud_import' %}">
+                        <form method="post" action="{% url 'cloud_import' %}" data-cloud-import-form>
                             {% csrf_token %}
                             <input type="hidden" name="provider" value="{{ card.provider }}">
                             <button type="submit" class="btn btn-outline">{% t "settings.cloud.sync_from" %}</button>
@@ -99,7 +99,7 @@
             <div class="settings-cloud-url-form">
                 <h3>{% t "settings.cloud.url.title" %}</h3>
                 <p class="settings-hint">{% t "settings.cloud.url.desc" %}</p>
-                <form method="post" action="{% url 'cloud_import' %}" class="settings-import-form">
+                <form method="post" action="{% url 'cloud_import' %}" class="settings-import-form" id="cloudUrlImportForm">
                     {% csrf_token %}
                     <input type="hidden" name="provider" value="url">
                     <label for="cloud_url_remote_ref">{% t "settings.cloud.url.label" %}</label>
@@ -110,4 +110,121 @@
         </article>
     </div>
 </section>
+<script>
+(() => {
+    const historyApi = window.endfieldPassHistory;
+    if (!historyApi) return;
+
+    const exportBtn = document.getElementById("localHistoryExportBtn");
+    const importForm = document.getElementById("localHistoryImportForm");
+    const importInput = document.getElementById("history_file");
+    const cloudExportForms = document.querySelectorAll("[data-cloud-export-form]");
+    const cloudImportForms = document.querySelectorAll("[data-cloud-import-form]");
+    const cloudUrlImportForm = document.getElementById("cloudUrlImportForm");
+    const cloudUrlInput = document.getElementById("cloud_url_remote_ref");
+
+    const triggerDownload = (filename, content) => {
+        const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    if (exportBtn) {
+        exportBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            const payload = historyApi.readPayload();
+            if (!payload) return;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            triggerDownload(`endfieldpass-history-${timestamp}.json`, JSON.stringify(payload, null, 2));
+        });
+    }
+
+    if (importForm && importInput) {
+        importForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const file = importInput.files && importInput.files[0];
+            if (!file) return;
+
+            let rawText = "";
+            try {
+                rawText = await file.text();
+                const payload = JSON.parse(rawText);
+                const normalized = historyApi.normalizePayload(payload);
+                if (!normalized) return;
+                historyApi.writePayload(normalized, "settings_import");
+                if (typeof historyApi.syncWithCloud === "function") {
+                    await historyApi.syncWithCloud({ force: true, preferPush: true });
+                }
+                importInput.value = "";
+            } catch (_) {
+                // Keep silent to preserve existing simple UI flow.
+            }
+        });
+    }
+
+    cloudExportForms.forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const providerInput = form.querySelector('input[name="provider"]');
+            const provider = String(providerInput?.value || "").trim().toLowerCase();
+            const payload = historyApi.readPayload();
+            if (!provider || !payload) return;
+            try {
+                await fetch("/api/cloud/auto/export", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ provider, payload }),
+                });
+            } catch (_) {}
+        });
+    });
+
+    cloudImportForms.forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const providerInput = form.querySelector('input[name="provider"]');
+            const provider = String(providerInput?.value || "").trim().toLowerCase();
+            if (!provider) return;
+            try {
+                const response = await fetch("/api/cloud/auto/import", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ provider }),
+                });
+                if (!response.ok) return;
+                const result = await response.json();
+                const normalized = historyApi.normalizePayload(result?.payload);
+                if (!normalized) return;
+                historyApi.writePayload(normalized, "settings_cloud_import");
+            } catch (_) {}
+        });
+    });
+
+    if (cloudUrlImportForm && cloudUrlInput) {
+        cloudUrlImportForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const remoteRef = String(cloudUrlInput.value || "").trim();
+            if (!remoteRef) return;
+            try {
+                const response = await fetch("/api/cloud/auto/import", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ provider: "url", remote_ref: remoteRef }),
+                });
+                if (!response.ok) return;
+                const result = await response.json();
+                const normalized = historyApi.normalizePayload(result?.payload);
+                if (!normalized) return;
+                historyApi.writePayload(normalized, "settings_cloud_url_import");
+            } catch (_) {}
+        });
+    }
+})();
+</script>
 {% endblock %}

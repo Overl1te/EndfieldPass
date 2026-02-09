@@ -14,28 +14,45 @@
 
 <section class="card-grid dashboard-grid">
     {% for card in cards %}
-    <article class="wish-card wish-card--history" data-history-card>
+    <article
+        class="wish-card wish-card--history"
+        data-history-card
+        data-source-pool-type="{{ card.source_pool_type }}"
+        data-pool-fallback="{{ card.pool_id_fallback }}"
+        data-six-limit="{{ card.six_star_limit }}"
+        data-five-limit="{{ card.five_star_limit }}"
+        data-empty-text="{% t 'dashboard.empty' %}"
+        data-unknown-name="{% t 'characters.unknown_name' %}"
+    >
         <div class="wish-card-header">
             <h2>{{ card.title }}</h2>
         </div>
 
         <div class="stat-row">
             <span class="label">{% t "dashboard.total_wishes" %}</span>
-            <span class="value">{{ card.total }}</span>
+            <span class="value" data-total>{{ card.total }}</span>
         </div>
         <div class="stat-row">
             <div>
                 <span class="label">{% t "dashboard.pity6" %}</span>
-                <span class="label-sub">{% t "dashboard.pity_suffix" limit=card.six_star_limit left=card.six_star_left %}</span>
+                <span
+                    class="label-sub"
+                    data-six-sub
+                    data-pity-template="{% t 'dashboard.pity_suffix' limit='__LIMIT__' left='__LEFT__' %}"
+                >{% t "dashboard.pity_suffix" limit=card.six_star_limit left=card.six_star_left %}</span>
             </div>
-            <span class="value accent-orange">{{ card.six_star_pity }}</span>
+            <span class="value accent-orange" data-six-pity>{{ card.six_star_pity }}</span>
         </div>
         <div class="stat-row">
             <div>
                 <span class="label">{% t "dashboard.pity5" %}</span>
-                <span class="label-sub">{% t "dashboard.pity_suffix" limit=card.five_star_limit left=card.five_star_left %}</span>
+                <span
+                    class="label-sub"
+                    data-five-sub
+                    data-pity-template="{% t 'dashboard.pity_suffix' limit='__LIMIT__' left='__LEFT__' %}"
+                >{% t "dashboard.pity_suffix" limit=card.five_star_limit left=card.five_star_left %}</span>
             </div>
-            <span class="value accent-gold">{{ card.five_star_pity }}</span>
+            <span class="value accent-gold" data-five-pity>{{ card.five_star_pity }}</span>
         </div>
 
         <div class="wish-history" data-history-body>
@@ -55,7 +72,7 @@
                             <th>{% t "dashboard.table.guarantee" %}</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody data-history-rows>
                         {% for row in card.history_rows %}
                         <tr data-rarity="{{ row.rarity }}">
                             <td class="rarity-{{ row.rarity }}">{{ row.name }}</td>
@@ -91,11 +108,118 @@
 
 <script>
 (() => {
+    const historyApi = window.endfieldPassHistory;
+    const formatDate = (ts) => {
+        const value = Number(ts) || 0;
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "-";
+        return date.toLocaleString();
+    };
+
+    const pityCounterUntilAny = (rarities, resetValues) => {
+        let counter = 0;
+        for (const rarity of rarities) {
+            if (resetValues.has(rarity)) return counter;
+            counter += 1;
+        }
+        return counter;
+    };
+
+    const pityStateWithResets = (rarities, resetValues, hardLimit) => {
+        const current = pityCounterUntilAny(rarities, resetValues);
+        return [current, Math.max(hardLimit - current, 0)];
+    };
+
+    const renderCardFromPulls = (card, pulls) => {
+        const poolType = String(card.dataset.sourcePoolType || "");
+        const poolFallback = String(card.dataset.poolFallback || "").toLowerCase();
+        const sixLimit = Number.parseInt(card.dataset.sixLimit || "80", 10) || 80;
+        const fiveLimit = Number.parseInt(card.dataset.fiveLimit || "10", 10) || 10;
+        const emptyText = card.dataset.emptyText || "No data";
+        const unknownName = card.dataset.unknownName || "Unknown";
+
+        const relevant = pulls.filter((pull) => {
+            const byType = String(pull.source_pool_type || "") === poolType;
+            const byFallback = String(pull.pool_id || "").toLowerCase().includes(poolFallback);
+            return byType || byFallback;
+        }).sort((a, b) => (Number(b.seq_id) || 0) - (Number(a.seq_id) || 0));
+
+        const rarities = relevant.map((pull) => Number(pull.rarity) || 0);
+        const [sixPity, sixLeft] = pityStateWithResets(rarities, new Set([6]), sixLimit);
+        const [fivePity, fiveLeft] = pityStateWithResets(rarities, new Set([5, 6]), fiveLimit);
+
+        const totalNode = card.querySelector("[data-total]");
+        const sixPityNode = card.querySelector("[data-six-pity]");
+        const fivePityNode = card.querySelector("[data-five-pity]");
+        const sixSubNode = card.querySelector("[data-six-sub]");
+        const fiveSubNode = card.querySelector("[data-five-sub]");
+        if (totalNode) totalNode.textContent = String(rarities.length);
+        if (sixPityNode) sixPityNode.textContent = String(sixPity);
+        if (fivePityNode) fivePityNode.textContent = String(fivePity);
+        if (sixSubNode) {
+            const template = String(sixSubNode.dataset.pityTemplate || "");
+            sixSubNode.textContent = template.replace("__LIMIT__", String(sixLimit)).replace("__LEFT__", String(sixLeft));
+        }
+        if (fiveSubNode) {
+            const template = String(fiveSubNode.dataset.pityTemplate || "");
+            fiveSubNode.textContent = template.replace("__LIMIT__", String(fiveLimit)).replace("__LEFT__", String(fiveLeft));
+        }
+
+        const historyRowsNode = card.querySelector("[data-history-rows]");
+        if (!historyRowsNode) return;
+
+        const visiblePulls = relevant.slice(0, 120);
+        const chronological = [...visiblePulls].reverse();
+        let pity6 = 0;
+        let pity5 = 0;
+        let pity4 = 0;
+        const rows = [];
+        chronological.forEach((pull) => {
+            const rarity = Number(pull.rarity) || 0;
+            pity6 += 1;
+            pity5 += 1;
+            pity4 += 1;
+            let guarantee = pity4;
+            if (rarity === 6) {
+                guarantee = pity6;
+                pity6 = 0;
+                pity5 = 0;
+                pity4 = 0;
+            } else if (rarity === 5) {
+                guarantee = pity5;
+                pity5 = 0;
+                pity4 = 0;
+            } else if (rarity === 4) {
+                guarantee = pity4;
+                pity4 = 0;
+            }
+            rows.push({
+                rarity,
+                name: pull.char_name || pull.char_id || unknownName,
+                date: formatDate(pull.gacha_ts),
+                guarantee,
+            });
+        });
+
+        const finalRows = rows.reverse();
+        if (!finalRows.length) {
+            historyRowsNode.innerHTML = `<tr><td colspan="3">${emptyText}</td></tr>`;
+            return;
+        }
+        historyRowsNode.innerHTML = finalRows.map((row) => `
+            <tr data-rarity="${row.rarity}">
+                <td class="rarity-${row.rarity}">${row.name}</td>
+                <td>${row.date}</td>
+                <td>${row.guarantee}</td>
+            </tr>
+        `).join("");
+    };
+
     document.querySelectorAll("[data-history-card]").forEach((card) => {
         const toggle = card.querySelector("[data-history-toggle]");
         const body = card.querySelector("[data-history-body]");
         const pills = card.querySelectorAll("[data-rarity-filter]");
-        const rows = card.querySelectorAll("tbody tr[data-rarity]");
         const collapseLabel = "{% t 'dashboard.history.collapse' %}";
         const expandLabel = "{% t 'dashboard.history.expand' %}";
         const updateToggleLabel = (isExpanded) => {
@@ -121,6 +245,7 @@
                     .filter((pill) => pill.classList.contains("active"))
                     .map((pill) => pill.dataset.rarityFilter)
             );
+            const rows = card.querySelectorAll("tbody tr[data-rarity]");
 
             if (activeValues.size === 0) {
                 rarityButtons.forEach((pill) => pill.classList.add("active"));
@@ -166,6 +291,33 @@
 
         applyFilters();
     });
+
+    const renderDashboard = () => {
+        if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
+        const pulls = historyApi.getLatestPulls() || [];
+        document.querySelectorAll("[data-history-card]").forEach((card) => {
+            renderCardFromPulls(card, pulls);
+        });
+        document.querySelectorAll("[data-history-card]").forEach((card) => {
+            const allButton = card.querySelector('[data-rarity-filter="all"]');
+            const rarityButtons = Array.from(card.querySelectorAll("[data-rarity-filter]"))
+                .filter((pill) => pill.dataset.rarityFilter !== "all");
+            const rows = card.querySelectorAll("tbody tr[data-rarity]");
+            const activeValues = new Set(
+                rarityButtons
+                    .filter((pill) => pill.classList.contains("active"))
+                    .map((pill) => pill.dataset.rarityFilter)
+            );
+            const showAll = activeValues.size === rarityButtons.length;
+            if (allButton) allButton.classList.toggle("active", showAll);
+            rows.forEach((row) => {
+                row.hidden = activeValues.size ? !activeValues.has(row.dataset.rarity) : false;
+            });
+        });
+    };
+
+    renderDashboard();
+    window.addEventListener("endfieldpass:history-updated", renderDashboard);
 })();
 </script>
 {% endblock %}

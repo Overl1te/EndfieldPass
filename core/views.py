@@ -12,17 +12,15 @@ import re
 import secrets
 import threading
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from django.conf import settings
-from django.db import transaction
 from django.http import HttpResponseBadRequest, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.utils import timezone as django_timezone
-from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 
 from .cloud import (
@@ -37,7 +35,6 @@ from .cloud import (
     import_payload_from_cloud,
     refresh_oauth_token,
 )
-from .models import ImportSession, Pull
 from .localization import (
     SITE_LANGUAGE_COOKIE_KEY,
     SITE_LANGUAGE_SESSION_KEY,
@@ -50,6 +47,8 @@ from .services import fetch_all_records
 
 IMPORT_PROGRESS = {}
 IMPORT_PROGRESS_LOCK = threading.Lock()
+IMPORT_SESSIONS = {}
+IMPORT_SESSION_COUNTER = 0
 
 POOL_LABELS = {
     "E_CharacterGachaPoolType_Standard": "dashboard.pool.standard",
@@ -278,43 +277,24 @@ def _build_history_rows(pulls, language):
 
 
 def dashboard(request):
-    """Render pity dashboard for latest successful import session."""
+    """Render pity dashboard shell. Client computes personal data from local/cloud storage."""
     language = get_request_language(request)
-    latest_session = ImportSession.objects.filter(status="done").order_by("-created_at").first()
     cards = []
 
     for spec in DASHBOARD_POOLS:
-        rarities = []
-        pulls = []
-        if latest_session:
-            queryset = latest_session.pulls.filter(source_pool_type=spec["source_pool_type"]).order_by("-seq_id")
-            if not queryset.exists():
-                queryset = latest_session.pulls.filter(pool_id__icontains=spec["pool_id_fallback"]).order_by("-seq_id")
-            rarities = list(queryset.values_list("rarity", flat=True))
-            pulls = list(queryset[:120])
-
-        six_star_pity, six_star_left = _pity_state_with_resets(
-            rarities=rarities,
-            reset_values={6},
-            hard_limit=spec["six_star_limit"],
-        )
-        five_star_pity, five_star_left = _pity_state_with_resets(
-            rarities=rarities,
-            reset_values={5, 6},
-            hard_limit=spec["five_star_limit"],
-        )
-
         cards.append(
             {
                 "title": _tr_lang(language, spec["title_key"]),
-                "total": len(rarities),
-                "six_star_pity": six_star_pity,
-                "six_star_left": six_star_left,
+                "total": 0,
+                "six_star_pity": 0,
+                "six_star_left": spec["six_star_limit"],
                 "six_star_limit": spec["six_star_limit"],
-                "five_star_pity": five_star_pity,
-                "five_star_left": five_star_left,
+                "five_star_pity": 0,
+                "five_star_left": spec["five_star_limit"],
                 "five_star_limit": spec["five_star_limit"],
-                "history_rows": _build_history_rows(pulls, language),
+                "history_rows": [],
+                "source_pool_type": spec["source_pool_type"],
+                "pool_id_fallback": spec["pool_id_fallback"],
             }
         )
 
@@ -323,17 +303,17 @@ def dashboard(request):
         "core/dashboard.html",
         {
             "cards": cards,
-            "latest_session": latest_session,
+            "latest_session": None,
         },
     )
 
 
 def characters_page(request):
-    """Render character collection page with obtained/missing status."""
+    """Render character collection shell. Client computes obtained status from local/cloud storage."""
     language = get_request_language(request)
-    latest_session = ImportSession.objects.filter(status="done").order_by("-created_at").first()
-    obtained_map = _build_character_obtained_map(latest_session)
-    first_hero_ts = _get_first_hero_ts(latest_session)
+    latest_session = None
+    obtained_map = {}
+    first_hero_ts = None
     characters = []
     for character in CHARACTERS:
         element_meta = CHARACTER_ELEMENTS.get(character["element"], {})
@@ -392,13 +372,13 @@ def _to_bool(value):
 
 
 def _history_export_payload():
-    """Build canonical export payload used for file/cloud sync."""
-    sessions = list(ImportSession.objects.order_by("-created_at"))
+    """Build canonical export payload from in-memory import sessions."""
+    sessions = _all_import_sessions()
     return {
         "schema_version": 1,
         "exported_at": datetime.now(tz=timezone.utc).isoformat(),
         "session_count": len(sessions),
-        "pull_count": Pull.objects.count(),
+        "pull_count": sum(len((session or {}).get("pulls") or []) for session in sessions),
         "sessions": [_serialize_session(session) for session in sessions],
     }
 
@@ -667,28 +647,15 @@ def cookies_policy(request):
 
 
 def _serialize_session(session):
-    """Serialize import session with pulls to export JSON."""
-    pulls = list(
-        session.pulls.order_by("-seq_id").values(
-            "pool_id",
-            "pool_name",
-            "char_id",
-            "char_name",
-            "rarity",
-            "is_free",
-            "is_new",
-            "gacha_ts",
-            "seq_id",
-            "source_pool_type",
-        )
-    )
+    """Serialize in-memory import session with pulls to export JSON."""
+    pulls = list((session or {}).get("pulls") or [])
     return {
-        "source_session_id": session.id,
-        "created_at": session.created_at.isoformat() if session.created_at else None,
-        "server_id": session.server_id,
-        "lang": session.lang,
-        "status": session.status,
-        "error": session.error,
+        "source_session_id": (session or {}).get("id"),
+        "created_at": (session or {}).get("created_at"),
+        "server_id": (session or {}).get("server_id"),
+        "lang": (session or {}).get("lang"),
+        "status": (session or {}).get("status"),
+        "error": (session or {}).get("error"),
         "pulls": pulls,
     }
 
@@ -721,21 +688,8 @@ def _build_session_payloads(payload):
     return None
 
 
-def _apply_session_created_at(session, created_at_raw):
-    """Apply imported created_at timestamp if it is valid."""
-    if not created_at_raw:
-        return
-
-    parsed = parse_datetime(str(created_at_raw))
-    if not parsed:
-        return
-    if django_timezone.is_naive(parsed):
-        parsed = django_timezone.make_aware(parsed, django_timezone.get_current_timezone())
-    ImportSession.objects.filter(pk=session.pk).update(created_at=parsed)
-
-
 def _import_history_payload(payload):
-    """Import history payload into DB and return inserted counters."""
+    """Validate history payload shape and return counters without writing DB."""
     if not isinstance(payload, dict):
         raise ValueError("view.error.bad_payload")
 
@@ -745,52 +699,15 @@ def _import_history_payload(payload):
 
     imported_sessions = 0
     imported_pulls = 0
-    with transaction.atomic():
-        for session_payload in sessions_payload:
-            if not isinstance(session_payload, dict):
-                continue
-
-            session = ImportSession.objects.create(
-                page_url=str(session_payload.get("page_url") or ""),
-                token=str(session_payload.get("token") or ""),
-                server_id=str(session_payload.get("server_id") or "3"),
-                lang=str(session_payload.get("lang") or "ru-ru"),
-                status=str(session_payload.get("status") or "done"),
-                error=str(session_payload.get("error") or ""),
-            )
-            imported_sessions += 1
-            _apply_session_created_at(session, session_payload.get("created_at"))
-
-            pulls_payload = session_payload.get("pulls")
-            if not isinstance(pulls_payload, list):
-                pulls_payload = session_payload.get("items")
-            if not isinstance(pulls_payload, list):
-                pulls_payload = []
-
-            pulls_to_create = []
-            for item in pulls_payload:
-                if not isinstance(item, dict):
-                    continue
-                pulls_to_create.append(
-                    Pull(
-                        session=session,
-                        pool_id=str(item.get("pool_id") or item.get("poolId") or "UNKNOWN"),
-                        pool_name=str(item.get("pool_name") or item.get("poolName") or ""),
-                        char_id=str(item.get("char_id") or item.get("charId") or ""),
-                        char_name=str(item.get("char_name") or item.get("charName") or ""),
-                        rarity=_to_int(item.get("rarity"), default=0),
-                        is_free=_to_bool(item.get("is_free") if "is_free" in item else item.get("isFree")),
-                        is_new=_to_bool(item.get("is_new") if "is_new" in item else item.get("isNew")),
-                        gacha_ts=_to_int(item.get("gacha_ts") if "gacha_ts" in item else item.get("gachaTs"), default=0) or None,
-                        seq_id=_to_int(item.get("seq_id") if "seq_id" in item else item.get("seqId"), default=0),
-                        source_pool_type=str(item.get("source_pool_type") or item.get("_source_pool_type") or ""),
-                        raw=item,
-                    )
-                )
-
-            if pulls_to_create:
-                Pull.objects.bulk_create(pulls_to_create, batch_size=1000)
-                imported_pulls += len(pulls_to_create)
+    for session_payload in sessions_payload:
+        if not isinstance(session_payload, dict):
+            continue
+        imported_sessions += 1
+        pulls_payload = session_payload.get("pulls")
+        if not isinstance(pulls_payload, list):
+            pulls_payload = session_payload.get("items")
+        if isinstance(pulls_payload, list):
+            imported_pulls += sum(1 for item in pulls_payload if isinstance(item, dict))
 
     return imported_sessions, imported_pulls
 
@@ -1006,6 +923,102 @@ def cloud_import(request):
     return _render_settings(request, _tr(request, "view.cloud.import_done"), "success", details)
 
 
+def _parse_json_body(request):
+    """Parse request body as JSON object."""
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _connected_sync_providers(request):
+    """Return list of connected OAuth sync providers."""
+    providers = []
+    auth_map = _get_cloud_auth_map(request)
+    for provider, _label in SYNC_PROVIDER_CHOICES:
+        auth = auth_map.get(provider) if isinstance(auth_map.get(provider), dict) else {}
+        if str(auth.get("access_token") or "").strip():
+            providers.append(provider)
+    return providers
+
+
+@csrf_exempt
+def cloud_connected_providers_api(request):
+    """Return connected cloud providers for automatic client-side sync."""
+    if request.method != "GET":
+        return HttpResponseBadRequest("GET only")
+    return JsonResponse({"providers": _connected_sync_providers(request)})
+
+
+@csrf_exempt
+def cloud_auto_import_api(request):
+    """Fetch cloud JSON payload and return it to client without DB writes."""
+    if request.method != "POST":
+        return HttpResponseBadRequest("POST only")
+
+    body = _parse_json_body(request)
+    if body is None:
+        return HttpResponseBadRequest("bad json")
+
+    provider = str(body.get("provider") or "").strip().lower()
+    remote_ref = str(body.get("remote_ref") or "").strip()
+    if provider != "url" and not _is_sync_provider(provider):
+        return JsonResponse({"ok": False, "error": _tr(request, "view.cloud.choose_sync_provider")}, status=400)
+
+    try:
+        if provider == "url":
+            if not remote_ref:
+                return JsonResponse({"ok": False, "error": _tr(request, "view.cloud.url_required")}, status=400)
+            payload = import_payload_from_cloud(provider="url", token="", remote_ref=remote_ref)
+        else:
+            access_token = _ensure_cloud_access_token(request, provider)
+            payload = import_payload_from_cloud(provider=provider, token=access_token, remote_ref="")
+        imported_sessions, imported_pulls = _import_history_payload(payload)
+        return JsonResponse(
+            {
+                "ok": True,
+                "provider": provider,
+                "payload": payload,
+                "session_count": imported_sessions,
+                "pull_count": imported_pulls,
+            }
+        )
+    except CloudIntegrationError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    except ValueError as exc:
+        return JsonResponse({"ok": False, "error": _tr(request, str(exc))}, status=400)
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+
+@csrf_exempt
+def cloud_auto_export_api(request):
+    """Push client-provided JSON payload to connected cloud provider."""
+    if request.method != "POST":
+        return HttpResponseBadRequest("POST only")
+
+    body = _parse_json_body(request)
+    if body is None:
+        return HttpResponseBadRequest("bad json")
+
+    provider = str(body.get("provider") or "").strip().lower()
+    payload = body.get("payload")
+    if not _is_sync_provider(provider):
+        return JsonResponse({"ok": False, "error": _tr(request, "view.cloud.choose_sync_provider")}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"ok": False, "error": _tr(request, "view.error.bad_payload")}, status=400)
+
+    try:
+        access_token = _ensure_cloud_access_token(request, provider)
+        result = export_payload_to_cloud(provider=provider, token=access_token, payload=payload)
+        return JsonResponse({"ok": True, "provider": provider, "result": result})
+    except CloudIntegrationError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+
 def _default_form_data():
     """Return default import form values."""
     return {
@@ -1043,6 +1056,59 @@ def _get_progress(session_id: int):
         }
 
 
+def _next_import_session_id():
+    """Generate process-local import session id."""
+    global IMPORT_SESSION_COUNTER
+    with IMPORT_PROGRESS_LOCK:
+        IMPORT_SESSION_COUNTER += 1
+        return IMPORT_SESSION_COUNTER
+
+
+def _set_import_session(session_id: int, **updates):
+    """Upsert in-memory import session payload."""
+    with IMPORT_PROGRESS_LOCK:
+        session = IMPORT_SESSIONS.get(session_id, {})
+        session.update(updates)
+        IMPORT_SESSIONS[session_id] = session
+        return deepcopy(session)
+
+
+def _get_import_session(session_id: int):
+    """Read in-memory import session payload."""
+    with IMPORT_PROGRESS_LOCK:
+        session = IMPORT_SESSIONS.get(session_id)
+        return deepcopy(session) if session else None
+
+
+def _all_import_sessions():
+    """Return all in-memory import sessions sorted by created_at desc."""
+    with IMPORT_PROGRESS_LOCK:
+        sessions = [deepcopy(value) for value in IMPORT_SESSIONS.values()]
+    return sorted(sessions, key=lambda value: str(value.get("created_at") or ""), reverse=True)
+
+
+def _latest_import_session():
+    """Return latest in-memory import session."""
+    sessions = _all_import_sessions()
+    return sessions[0] if sessions else None
+
+
+def _normalize_pull_item(item):
+    """Normalize one pull record to canonical export format."""
+    return {
+        "pool_id": str(item.get("pool_id") or item.get("poolId") or "UNKNOWN"),
+        "pool_name": str(item.get("pool_name") or item.get("poolName") or ""),
+        "char_id": str(item.get("char_id") or item.get("charId") or ""),
+        "char_name": str(item.get("char_name") or item.get("charName") or ""),
+        "rarity": _to_int(item.get("rarity"), default=0),
+        "is_free": _to_bool(item.get("is_free") if "is_free" in item else item.get("isFree")),
+        "is_new": _to_bool(item.get("is_new") if "is_new" in item else item.get("isNew")),
+        "gacha_ts": _to_int(item.get("gacha_ts") if "gacha_ts" in item else item.get("gachaTs"), default=0) or None,
+        "seq_id": _to_int(item.get("seq_id") if "seq_id" in item else item.get("seqId"), default=0),
+        "source_pool_type": str(item.get("source_pool_type") or item.get("_source_pool_type") or ""),
+    }
+
+
 def _extract_credentials_from_page_url(page_url: str):
     """Parse token/server/lang query params from game history URL."""
     if not page_url:
@@ -1058,9 +1124,11 @@ def _extract_credentials_from_page_url(page_url: str):
 
 
 def _run_import_session(session_id: int, ui_language: str):
-    """Background job: fetch pulls, store in DB, update progress state."""
-    session = ImportSession.objects.get(pk=session_id)
-    _set_progress(session.id, status="running", progress=3, message=_tr_lang(ui_language, "import.loading.prepare"))
+    """Background job: fetch pulls and keep them in process memory only."""
+    session = _get_import_session(session_id)
+    if not session:
+        return
+    _set_progress(session_id, status="running", progress=3, message=_tr_lang(ui_language, "import.loading.prepare"))
 
     def on_pool_progress(index, total, pool_type, stage, **kwargs):
         pool_label_key = POOL_LABELS.get(pool_type)
@@ -1071,67 +1139,49 @@ def _run_import_session(session_id: int, ui_language: str):
         else:
             progress = 5 + int((index / total) * 70)
             message = _tr_lang(ui_language, "import.loading.hint2")
-        _set_progress(session.id, status="running", progress=progress, message=message)
+        _set_progress(session_id, status="running", progress=progress, message=message)
 
     try:
         items = fetch_all_records(
-            token=session.token,
-            server_id=session.server_id,
-            lang=session.lang,
+            token=str(session.get("token") or ""),
+            server_id=str(session.get("server_id") or ""),
+            lang=str(session.get("lang") or "ru-ru"),
             on_pool_progress=on_pool_progress,
         )
 
         _set_progress(
-            session.id,
+            session_id,
             status="running",
             progress=82,
             message=_tr_lang(ui_language, "import.loading.hint3"),
         )
 
-        pulls = []
-        for item in items:
-            pulls.append(
-                Pull(
-                    session=session,
-                    pool_id=str(item.get("poolId") or "UNKNOWN"),
-                    pool_name=str(item.get("poolName") or ""),
-                    char_id=str(item.get("charId") or ""),
-                    char_name=str(item.get("charName") or ""),
-                    rarity=int(item.get("rarity") or 0),
-                    is_free=bool(item.get("isFree")),
-                    is_new=bool(item.get("isNew")),
-                    gacha_ts=int(item.get("gachaTs")) if item.get("gachaTs") else None,
-                    seq_id=int(item.get("seqId") or 0),
-                    source_pool_type=str(item.get("_source_pool_type") or ""),
-                    raw=item,
-                )
+        pulls = [_normalize_pull_item(item) for item in items]
+        total = len(pulls)
+        if total:
+            _set_progress(
+                session_id,
+                status="running",
+                progress=99,
+                message=f"{_tr_lang(ui_language, 'import.error.processing')} {total}/{total}.",
             )
 
-        if pulls:
-            batch_size = 1000
-            total = len(pulls)
-            saved = 0
-            for start in range(0, total, batch_size):
-                batch = pulls[start : start + batch_size]
-                Pull.objects.bulk_create(batch, batch_size=batch_size)
-                saved += len(batch)
-                progress = 82 + int((saved / total) * 17)
-                _set_progress(
-                    session.id,
-                    status="running",
-                    progress=min(progress, 99),
-                    message=f"{_tr_lang(ui_language, 'import.error.processing')} {saved}/{total}.",
-                )
-
-        session.status = "done"
-        session.save(update_fields=["status"])
-        _set_progress(session.id, status="done", progress=100, message=_tr_lang(ui_language, "view.settings.import_done"))
+        _set_import_session(
+            session_id,
+            status="done",
+            error="",
+            pulls=pulls,
+        )
+        _set_progress(session_id, status="done", progress=100, message=_tr_lang(ui_language, "view.settings.import_done"))
     except Exception as exc:
-        session.status = "error"
-        session.error = str(exc)
-        session.save(update_fields=["status", "error"])
+        _set_import_session(
+            session_id,
+            status="error",
+            error=str(exc),
+            pulls=[],
+        )
         _set_progress(
-            session.id,
+            session_id,
             status="error",
             progress=100,
             message=_tr_lang(ui_language, "view.settings.import_error"),
@@ -1179,51 +1229,70 @@ def create_session(request):
     if not token or not server_id:
         return HttpResponseBadRequest("missing token/server_id")
 
-    session = ImportSession.objects.create(
+    session_id = _next_import_session_id()
+    session = _set_import_session(
+        session_id,
+        id=session_id,
+        created_at=datetime.now(tz=timezone.utc).isoformat(),
         token=token,
         server_id=server_id,
         lang=lang,
         page_url=page_url,
         status="running",
+        error="",
+        pulls=[],
     )
     ui_language = get_request_language(request)
-    _set_progress(session.id, status="running", progress=1, message=_tr_lang(ui_language, "import.loading.prepare"))
+    _set_progress(session_id, status="running", progress=1, message=_tr_lang(ui_language, "import.loading.prepare"))
 
-    thread = threading.Thread(target=_run_import_session, args=(session.id, ui_language), daemon=True)
+    thread = threading.Thread(target=_run_import_session, args=(session_id, ui_language), daemon=True)
     thread.start()
 
-    return JsonResponse({"session_id": session.id, "status": session.status})
+    return JsonResponse({"session_id": session_id, "status": session.get("status")})
 
 
 def import_status(request, session_id: int):
     """Return current import progress and status as JSON."""
-    session = get_object_or_404(ImportSession, pk=session_id)
+    session = _get_import_session(session_id)
+    if not session:
+        return JsonResponse({"error": "invalid session"}, status=404)
     progress_state = _get_progress(session_id)
 
     progress = progress_state.get("progress")
     if progress is None:
-        progress = 100 if session.status in {"done", "error"} else 0
+        progress = 100 if session.get("status") in {"done", "error"} else 0
 
-    if session.status == "done":
+    if session.get("status") == "done":
         progress = 100
     message = progress_state.get("message") or _tr(request, "import.error.processing")
 
     return JsonResponse(
         {
-            "session_id": session.id,
-            "status": session.status,
+            "session_id": session_id,
+            "status": session.get("status") or "running",
             "progress": progress,
             "message": message,
-            "error": session.error,
-            "pull_count": session.pulls.count(),
+            "error": session.get("error") or "",
+            "pull_count": len(session.get("pulls") or []),
         }
     )
 
 
 def import_view(request, session_id: int):
     """Render import page with a specific session result preview."""
-    session = get_object_or_404(ImportSession, pk=session_id)
-    pulls = session.pulls.order_by("-seq_id")[:500]
+    session = _get_import_session(session_id)
+    if not session:
+        return render(
+            request,
+            "endfield_tracker/import_view.html",
+            {
+                "session": None,
+                "pulls": [],
+                "error": _tr(request, "import.error.invalid_session"),
+                "form": _default_form_data(),
+            },
+        )
+    pulls = list((session.get("pulls") or [])[:500])
     return render(
         request,
         "endfield_tracker/import_view.html",
@@ -1232,10 +1301,10 @@ def import_view(request, session_id: int):
             "pulls": pulls,
             "error": "",
             "form": {
-                "page_url": session.page_url,
-                "token": session.token,
-                "server_id": session.server_id,
-                "lang": session.lang,
+                "page_url": session.get("page_url", ""),
+                "token": session.get("token", ""),
+                "server_id": session.get("server_id", "3"),
+                "lang": session.get("lang", "ru-ru"),
             },
         },
     )
@@ -1243,24 +1312,15 @@ def import_view(request, session_id: int):
 
 def pulls_json(request, session_id: int):
     """Return pulls JSON for a single import session."""
-    session = get_object_or_404(ImportSession, pk=session_id)
-    queryset = session.pulls.order_by("-seq_id").values(
-        "pool_id",
-        "pool_name",
-        "char_id",
-        "char_name",
-        "rarity",
-        "is_free",
-        "is_new",
-        "gacha_ts",
-        "seq_id",
-        "source_pool_type",
-    )
+    session = _get_import_session(session_id)
+    if not session:
+        return JsonResponse({"error": "invalid session"}, status=404)
+    items = list(session.get("pulls") or [])
     return JsonResponse(
         {
-            "session_id": session.id,
-            "count": queryset.count(),
-            "items": list(queryset[:5000]),
+            "session_id": session_id,
+            "count": len(items),
+            "items": items,
         }
     )
 
@@ -1278,33 +1338,25 @@ def pulls_api(request):
     limit = max(1, min(limit, 5000))
 
     if session_id:
-        session = get_object_or_404(ImportSession, pk=session_id)
+        try:
+            parsed_session_id = int(session_id)
+        except ValueError:
+            return JsonResponse({"error": "invalid session_id"}, status=400)
+        session = _get_import_session(parsed_session_id)
     else:
-        session = ImportSession.objects.order_by("-created_at").first()
-        if not session:
-            return JsonResponse({"session_id": None, "count": 0, "items": []})
+        session = _latest_import_session()
+    if not session:
+        return JsonResponse({"session_id": None, "count": 0, "items": []})
 
-    queryset = session.pulls.order_by("-seq_id")
+    items = list(session.get("pulls") or [])
+    items.sort(key=lambda value: _to_int(value.get("seq_id"), default=0), reverse=True)
     if pool_id:
-        queryset = queryset.filter(pool_id=pool_id)
-
-    values = queryset.values(
-        "pool_id",
-        "pool_name",
-        "char_id",
-        "char_name",
-        "rarity",
-        "is_free",
-        "is_new",
-        "gacha_ts",
-        "seq_id",
-        "source_pool_type",
-    )
+        items = [item for item in items if str(item.get("pool_id") or "") == pool_id]
     return JsonResponse(
         {
-            "session_id": session.id,
+            "session_id": session.get("id"),
             "pool_id": pool_id or None,
-            "count": values.count(),
-            "items": list(values[:limit]),
+            "count": len(items),
+            "items": items[:limit],
         }
     )

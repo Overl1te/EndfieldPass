@@ -61,5 +61,260 @@
             </footer>
         </main>
     </div>
+    <script>
+    (() => {
+        const HISTORY_KEY = "endfieldpass:history_payload_v1";
+        const CLOUD_PROVIDER_KEY = "endfieldpass:cloud_provider";
+        const LAST_SYNC_TS_KEY = "endfieldpass:last_auto_sync_ts";
+        const AUTO_SYNC_COOLDOWN_MS = 25000;
+
+        const toInt = (value, fallback = 0) => {
+            const parsed = Number.parseInt(String(value ?? ""), 10);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+
+        const toBool = (value) => {
+            if (typeof value === "boolean") return value;
+            if (typeof value === "string") {
+                const normalized = value.trim().toLowerCase();
+                return normalized === "1" || normalized === "true" || normalized === "yes";
+            }
+            return Boolean(value);
+        };
+
+        const normalizePull = (item) => ({
+            pool_id: String(item?.pool_id ?? item?.poolId ?? "UNKNOWN"),
+            pool_name: String(item?.pool_name ?? item?.poolName ?? ""),
+            char_id: String(item?.char_id ?? item?.charId ?? ""),
+            char_name: String(item?.char_name ?? item?.charName ?? ""),
+            rarity: toInt(item?.rarity, 0),
+            is_free: toBool(item?.is_free ?? item?.isFree),
+            is_new: toBool(item?.is_new ?? item?.isNew),
+            gacha_ts: toInt(item?.gacha_ts ?? item?.gachaTs, 0) || null,
+            seq_id: toInt(item?.seq_id ?? item?.seqId, 0),
+            source_pool_type: String(item?.source_pool_type ?? item?._source_pool_type ?? ""),
+        });
+
+        const normalizeSession = (session, fallbackIndex = 0) => {
+            const rawPulls = Array.isArray(session?.pulls)
+                ? session.pulls
+                : (Array.isArray(session?.items) ? session.items : []);
+            const dedupe = new Map();
+            rawPulls.forEach((item, index) => {
+                const normalized = normalizePull(item);
+                const key = [
+                    normalized.seq_id || `idx-${index}`,
+                    normalized.pool_id,
+                    normalized.gacha_ts || "",
+                    normalized.char_id || normalized.char_name || "",
+                ].join(":");
+                if (!dedupe.has(key)) dedupe.set(key, normalized);
+            });
+            const pulls = Array.from(dedupe.values()).sort((a, b) => b.seq_id - a.seq_id);
+
+            return {
+                source_session_id: String(session?.source_session_id ?? session?.id ?? `local-${Date.now()}-${fallbackIndex}`),
+                created_at: String(session?.created_at ?? new Date().toISOString()),
+                server_id: String(session?.server_id ?? "3"),
+                lang: String(session?.lang ?? "ru-ru"),
+                status: String(session?.status ?? "done"),
+                error: String(session?.error ?? ""),
+                pulls,
+            };
+        };
+
+        const normalizePayload = (payload) => {
+            if (!payload || typeof payload !== "object") return null;
+            const rawSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+            const sessions = rawSessions.map((session, index) => normalizeSession(session, index));
+            const pullCount = sessions.reduce((total, session) => total + (session.pulls?.length || 0), 0);
+            return {
+                schema_version: 1,
+                exported_at: String(payload.exported_at ?? new Date().toISOString()),
+                session_count: sessions.length,
+                pull_count: pullCount,
+                sessions,
+            };
+        };
+
+        const readPayload = () => {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                if (!raw) return null;
+                return normalizePayload(JSON.parse(raw));
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const writePayload = (payload, reason = "update") => {
+            const normalized = normalizePayload(payload);
+            if (!normalized) return null;
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+            } catch (_) {
+                return null;
+            }
+            window.dispatchEvent(new CustomEvent("endfieldpass:history-updated", { detail: { reason } }));
+            return normalized;
+        };
+
+        const getLatestSession = (payload = null) => {
+            const current = payload || readPayload();
+            if (!current || !Array.isArray(current.sessions) || !current.sessions.length) return null;
+            const sorted = [...current.sessions].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+            return sorted[0] || null;
+        };
+
+        const getLatestPulls = (payload = null) => {
+            const session = getLatestSession(payload);
+            return Array.isArray(session?.pulls) ? session.pulls : [];
+        };
+
+        const upsertImportedSession = ({ server_id = "3", lang = "ru-ru", page_url = "", pulls = [] } = {}) => {
+            const current = readPayload() || {
+                schema_version: 1,
+                exported_at: new Date().toISOString(),
+                session_count: 0,
+                pull_count: 0,
+                sessions: [],
+            };
+            const nextSession = normalizeSession(
+                {
+                    source_session_id: `local-${Date.now()}`,
+                    created_at: new Date().toISOString(),
+                    server_id,
+                    lang,
+                    status: "done",
+                    error: "",
+                    page_url,
+                    pulls,
+                },
+                0
+            );
+            const sessions = [nextSession, ...current.sessions].slice(0, 40);
+            const merged = normalizePayload({
+                schema_version: 1,
+                exported_at: new Date().toISOString(),
+                sessions,
+            });
+            return writePayload(merged, "import");
+        };
+
+        const payloadTimestamp = (payload) => {
+            const normalized = normalizePayload(payload);
+            if (!normalized) return 0;
+            const exportedTs = Date.parse(normalized.exported_at || "");
+            if (Number.isFinite(exportedTs)) return exportedTs;
+            const latest = getLatestSession(normalized);
+            const createdTs = Date.parse(latest?.created_at || "");
+            return Number.isFinite(createdTs) ? createdTs : 0;
+        };
+
+        const requestJson = async (url, options = {}) => {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            return response.json();
+        };
+
+        const getConnectedProviders = async () => {
+            const result = await requestJson("/api/cloud/providers", { cache: "no-store" });
+            return Array.isArray(result.providers) ? result.providers : [];
+        };
+
+        const chooseProvider = (providers) => {
+            if (!providers.length) return "";
+            const preferred = String(localStorage.getItem(CLOUD_PROVIDER_KEY) || "").trim().toLowerCase();
+            const selected = providers.includes(preferred) ? preferred : providers[0];
+            try {
+                localStorage.setItem(CLOUD_PROVIDER_KEY, selected);
+            } catch (_) {}
+            return selected;
+        };
+
+        const importFromCloud = async (provider) => {
+            const result = await requestJson("/api/cloud/auto/import", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ provider }),
+            });
+            return normalizePayload(result.payload);
+        };
+
+        const exportToCloud = async (provider, payload) => {
+            return requestJson("/api/cloud/auto/export", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ provider, payload }),
+            });
+        };
+
+        const shouldRunAutoSync = (force = false) => {
+            if (force) return true;
+            let lastTs = 0;
+            try {
+                lastTs = toInt(sessionStorage.getItem(LAST_SYNC_TS_KEY), 0);
+            } catch (_) {
+                return true;
+            }
+            if (Date.now() - lastTs < AUTO_SYNC_COOLDOWN_MS) return false;
+            try {
+                sessionStorage.setItem(LAST_SYNC_TS_KEY, String(Date.now()));
+            } catch (_) {}
+            return true;
+        };
+
+        const syncWithCloud = async ({ force = false, preferPush = false } = {}) => {
+            if (!shouldRunAutoSync(force)) return { ok: true, skipped: true };
+
+            const providers = await getConnectedProviders();
+            const provider = chooseProvider(providers);
+            if (!provider) return { ok: true, skipped: true, reason: "no_provider" };
+
+            const localPayload = readPayload();
+            let remotePayload = null;
+            try {
+                remotePayload = await importFromCloud(provider);
+            } catch (_) {
+                remotePayload = null;
+            }
+
+            const localTs = payloadTimestamp(localPayload);
+            const remoteTs = payloadTimestamp(remotePayload);
+
+            if (remotePayload && (!localPayload || (remoteTs > localTs && !preferPush))) {
+                writePayload(remotePayload, "cloud_pull");
+                return { ok: true, provider, action: "pull" };
+            }
+
+            if (localPayload) {
+                await exportToCloud(provider, localPayload);
+                return { ok: true, provider, action: "push" };
+            }
+
+            return { ok: true, provider, skipped: true };
+        };
+
+        window.endfieldPassHistory = {
+            historyKey: HISTORY_KEY,
+            readPayload,
+            writePayload,
+            normalizePayload,
+            normalizeSession,
+            normalizePull,
+            getLatestSession,
+            getLatestPulls,
+            upsertImportedSession,
+            syncWithCloud,
+        };
+
+        window.addEventListener("DOMContentLoaded", () => {
+            if (!window.navigator.onLine) return;
+            syncWithCloud().catch(() => {});
+        });
+    })();
+    </script>
 </body>
 </html>

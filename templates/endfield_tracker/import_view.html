@@ -10,6 +10,7 @@
     data-create-session-url="{% url 'create_session' %}"
     data-status-template="{% url 'import_status' 0 %}"
     data-view-template="{% url 'import_view' 0 %}"
+    data-pulls-template="{% url 'pulls_json' 0 %}"
     data-current-session-id="{% if session %}{{ session.id }}{% endif %}"
 >
     <header class="import-header">
@@ -86,7 +87,7 @@
                 <li>{% t "import.platform.step5" %}</li>
             </ol>
             <div class="import-script-wrap">
-                <pre class="import-script"><code id="powershellScript">iwr https://endfieldpass.site/endfieldpass.ps1 -UseBasicParsing -OutFile $env:TEMP\endfieldpass.ps1; & powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endfieldpass.ps1
+                <pre class="import-script"><code id="powershellScript">iwr https://endfieldpass.site/scripts/endfieldpass.ps1 -UseBasicParsing -OutFile $env:TEMP\endfieldpass.ps1; & powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endfieldpass.ps1
 </code></pre>
                 <button type="button" class="btn btn-outline script-copy-btn" id="copyScriptButton">{% t "import.copy" %}</button>
             </div>
@@ -209,6 +210,7 @@
     const createSessionUrl = page.dataset.createSessionUrl;
     const statusTemplate = page.dataset.statusTemplate;
     const viewTemplate = page.dataset.viewTemplate;
+    const pullsTemplate = page.dataset.pullsTemplate;
     const currentSessionId = page.dataset.currentSessionId;
 
     const form = document.getElementById("importForm");
@@ -415,7 +417,29 @@
         } catch (_) {}
     };
 
-    const pollImportStatus = async (sessionId) => {
+    const persistImportedSession = async (sessionId, sourcePayload) => {
+        const pullsUrl = buildSessionUrl(pullsTemplate, sessionId);
+        const pullsResponse = await fetch(pullsUrl, { cache: "no-store" });
+        if (!pullsResponse.ok) {
+            throw new Error(i18n.errorImportFailed);
+        }
+        const pullsPayload = await pullsResponse.json();
+        const pulls = Array.isArray(pullsPayload.items) ? pullsPayload.items : [];
+        if (!window.endfieldPassHistory || typeof window.endfieldPassHistory.upsertImportedSession !== "function") {
+            return;
+        }
+        window.endfieldPassHistory.upsertImportedSession({
+            server_id: sourcePayload?.server_id || serverSelect.value || "3",
+            lang: sourcePayload?.lang || langSelect.value || "ru-ru",
+            page_url: sourcePayload?.page_url || pageUrlInput.value || "",
+            pulls,
+        });
+        if (typeof window.endfieldPassHistory.syncWithCloud === "function") {
+            await window.endfieldPassHistory.syncWithCloud({ force: true, preferPush: true });
+        }
+    };
+
+    const pollImportStatus = async (sessionId, sourcePayload) => {
         const statusUrl = buildSessionUrl(statusTemplate, sessionId);
         while (true) {
             const response = await fetch(statusUrl, { cache: "no-store" });
@@ -430,6 +454,7 @@
 
             if (payload.status === "done") {
                 setProgress(100, i18n.errorDoneOpening);
+                await persistImportedSession(sessionId, sourcePayload);
                 window.location.href = buildSessionUrl(viewTemplate, sessionId);
                 return;
             }
@@ -513,7 +538,7 @@
                 throw new Error(i18n.errorInvalidSession);
             }
 
-            await pollImportStatus(result.session_id);
+            await pollImportStatus(result.session_id, payload);
         } catch (error) {
             setLoadingState(false);
             showError(normalizeServerError(error.message, mode), i18n.errorHeader);

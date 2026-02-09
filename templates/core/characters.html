@@ -11,16 +11,22 @@
 
     <section class="characters-grid">
         {% for character in characters %}
-        <article class="character-card">
+        <article
+            class="character-card"
+            data-character-card
+            data-character-name="{{ character.name }}"
+            data-character-aliases="{{ character.aliases|join:'|' }}"
+            data-character-icon="{{ character.icon }}"
+        >
             <div class="character-topline">
                 <span class="character-element">
                     <img src="{% static 'img/type/' %}{{ character.element_icon }}" alt="{{ character.element_label }}" loading="lazy">
                     {{ character.element_label }}
                 </span>
                 {% if character.is_obtained %}
-                <span class="character-status is-obtained">{% t "characters.obtained" %} · {{ character.obtained_date }}</span>
+                <span class="character-status is-obtained" data-character-status>{% t "characters.obtained" %} &middot; {{ character.obtained_date }}</span>
                 {% else %}
-                <span class="character-status is-missing">{% t "characters.missing" %}</span>
+                <span class="character-status is-missing" data-character-status>{% t "characters.missing" %}</span>
                 {% endif %}
             </div>
 
@@ -52,4 +58,93 @@
         {% endfor %}
     </section>
 </section>
+<script>
+(() => {
+    const historyApi = window.endfieldPassHistory;
+    if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
+
+    const obtainedLabel = "{% t 'characters.obtained' %}";
+    const missingLabel = "{% t 'characters.missing' %}";
+    const unknownDateLabel = "{% t 'characters.date_unknown' %}";
+
+    const normalize = (value) => String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\W_]+/g, "");
+
+    const formatDate = (timestamp) => {
+        const value = Number(timestamp) || 0;
+        if (!value) return unknownDateLabel;
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return unknownDateLabel;
+        return new Intl.DateTimeFormat(undefined, {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+        }).format(date);
+    };
+
+    const buildObtainedMap = (pulls) => {
+        const obtained = new Map();
+        const sorted = [...pulls].sort((a, b) => (Number(a.gacha_ts) || 0) - (Number(b.gacha_ts) || 0));
+        sorted.forEach((pull) => {
+            const key = normalize(pull.char_name);
+            if (key && !obtained.has(key)) {
+                obtained.set(key, pull.gacha_ts || null);
+            }
+        });
+        return obtained;
+    };
+
+    const renderCharacters = () => {
+        const pulls = historyApi.getLatestPulls() || [];
+        const obtainedMap = buildObtainedMap(pulls);
+        const firstHeroTs = [...pulls]
+            .map((pull) => Number(pull.gacha_ts) || 0)
+            .filter((value) => value > 0)
+            .sort((a, b) => a - b)[0] || null;
+
+        document.querySelectorAll("[data-character-card]").forEach((card) => {
+            const statusNode = card.querySelector("[data-character-status]");
+            if (!statusNode) return;
+
+            const iconName = String(card.dataset.characterIcon || "");
+            const iconStem = iconName.split(".").slice(0, -1).join(".") || iconName;
+            const aliases = String(card.dataset.characterAliases || "")
+                .split("|")
+                .map((value) => normalize(value))
+                .filter(Boolean);
+            const lookupKeys = new Set([
+                normalize(card.dataset.characterName || ""),
+                normalize(iconStem),
+                ...aliases,
+            ]);
+
+            let matchedTs = null;
+            lookupKeys.forEach((key) => {
+                if (matchedTs) return;
+                if (obtainedMap.has(key)) matchedTs = obtainedMap.get(key);
+            });
+
+            if (iconName === "Endministrator.png") {
+                matchedTs = firstHeroTs;
+            }
+
+            if (matchedTs || iconName === "Endministrator.png") {
+                statusNode.classList.remove("is-missing");
+                statusNode.classList.add("is-obtained");
+                statusNode.textContent = `${obtainedLabel} - ${formatDate(matchedTs)}`;
+                return;
+            }
+
+            statusNode.classList.remove("is-obtained");
+            statusNode.classList.add("is-missing");
+            statusNode.textContent = missingLabel;
+        });
+    };
+
+    renderCharacters();
+    window.addEventListener("endfieldpass:history-updated", renderCharacters);
+})();
+</script>
 {% endblock %}

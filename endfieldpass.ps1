@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$LogPath = "$env:USERPROFILE\AppData\LocalLow\Gryphline\Endfield\sdklogs\HGWebview.log",
   [int]$TailLines = 50000,
   [switch]$NoClipboard
@@ -39,7 +39,7 @@ try {
   Write-Output $url
 
   # 2) Copy to clipboard (default) and print a highlighted, clickable site link
-  $site = 'https://endfieldpass.com'
+  $site = 'https://endfieldpass.site/import'
 
   if (-not $NoClipboard) {
     Set-Clipboard -Value $url
