@@ -1,11 +1,12 @@
 import json
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .cloud import CloudIntegrationError
+from .cloud import CloudIntegrationError, build_oauth_authorization_url
 from .models import ImportSession, Pull
 
 
@@ -175,6 +176,8 @@ class CloudIntegrationTests(TestCase):
     @override_settings(
         GOOGLE_OAUTH_CLIENT_ID="google-client",
         GOOGLE_OAUTH_CLIENT_SECRET="google-secret",
+        GOOGLE_OAUTH_SCOPE="https://www.googleapis.com/auth/drive.file",
+        DJANGO_EXTERNAL_BASE_URL="https://endfieldpass.com",
     )
     @patch("core.views.build_oauth_authorization_url")
     def test_cloud_connect_redirects_to_provider(self, auth_url_mock):
@@ -184,6 +187,9 @@ class CloudIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "https://example.com/oauth")
         auth_url_mock.assert_called_once()
+        kwargs = auth_url_mock.call_args.kwargs
+        self.assertEqual(kwargs["redirect_uri"], "https://endfieldpass.com/settings/cloud/google_drive/callback")
+        self.assertEqual(kwargs["scope"], "https://www.googleapis.com/auth/drive.file")
 
         session = self.client.session
         self.assertIn("cloud_oauth_state", session)
@@ -354,3 +360,32 @@ class CloudIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Не удалось выполнить облачную синхронизацию")
         self.assertContains(response, "bad token")
+
+
+class CloudOAuthUrlTests(TestCase):
+    def test_google_scope_normalizes_comma_and_space_list(self):
+        url = build_oauth_authorization_url(
+            provider="google_drive",
+            client_id="google-client",
+            redirect_uri="https://example.com/settings/cloud/google_drive/callback",
+            state="state-123",
+            scope="https://www.googleapis.com/auth/drive.file, https://www.googleapis.com/auth/drive.metadata.readonly",
+        )
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(
+            query.get("scope", [""])[0],
+            "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly",
+        )
+
+    def test_yandex_defaults_to_app_folder_scope(self):
+        url = build_oauth_authorization_url(
+            provider="yandex_disk",
+            client_id="yandex-client",
+            redirect_uri="https://example.com/settings/cloud/yandex_disk/callback",
+            state="state-123",
+            scope="",
+        )
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(query.get("scope", [""])[0], "cloud_api:disk.app_folder")

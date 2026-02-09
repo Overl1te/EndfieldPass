@@ -13,7 +13,7 @@ import secrets
 import threading
 import time
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from django.conf import settings
 from django.db import transaction
@@ -437,6 +437,25 @@ def _cloud_provider_credentials(provider):
     return "", ""
 
 
+def _cloud_provider_scope(provider):
+    """Load OAuth scope configured for provider from settings."""
+    normalized = (provider or "").strip().lower()
+    if normalized == "google_drive":
+        return str(getattr(settings, "GOOGLE_OAUTH_SCOPE", "") or "").strip()
+    if normalized == "yandex_disk":
+        return str(getattr(settings, "YANDEX_OAUTH_SCOPE", "") or "").strip()
+    return ""
+
+
+def _build_cloud_redirect_uri(request, provider):
+    """Build OAuth callback URL, optionally using externally configured base URL."""
+    callback_path = reverse("cloud_callback", args=[provider])
+    external_base = str(getattr(settings, "DJANGO_EXTERNAL_BASE_URL", "") or "").strip().rstrip("/")
+    if external_base:
+        return urljoin(f"{external_base}/", callback_path.lstrip("/"))
+    return request.build_absolute_uri(callback_path)
+
+
 def _is_cloud_oauth_configured(provider):
     """Return True when provider has both client id and secret configured."""
     client_id, client_secret = _cloud_provider_credentials(provider)
@@ -532,9 +551,9 @@ def _build_cloud_cards_context(request):
                 "connected": bool(access_token),
                 "token_expiring": bool(expires_at and expires_at <= now_ts + 60),
                 "setup_hint": (
-                    "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET"
+                    "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_SCOPE"
                     if provider == "google_drive"
-                    else "YANDEX_OAUTH_CLIENT_ID and YANDEX_OAUTH_CLIENT_SECRET"
+                    else "YANDEX_OAUTH_CLIENT_ID, YANDEX_OAUTH_CLIENT_SECRET, YANDEX_OAUTH_SCOPE"
                 ),
             }
         )
@@ -822,13 +841,14 @@ def cloud_connect(request, provider):
     request.session[CLOUD_OAUTH_STATE_SESSION_KEY] = {"provider": normalized, "state": state}
     request.session.modified = True
 
-    redirect_uri = request.build_absolute_uri(reverse("cloud_callback", args=[normalized]))
+    redirect_uri = _build_cloud_redirect_uri(request, normalized)
     try:
         auth_url = build_oauth_authorization_url(
             provider=normalized,
             client_id=client_id,
             redirect_uri=redirect_uri,
             state=state,
+            scope=_cloud_provider_scope(normalized),
         )
     except CloudIntegrationError as exc:
         return _render_settings(request, _tr(request, "view.cloud.oauth_start_failed"), "error", str(exc))
@@ -877,7 +897,7 @@ def cloud_callback(request, provider):
         return redirect("settings_page")
 
     client_id, client_secret = _cloud_provider_credentials(normalized)
-    redirect_uri = request.build_absolute_uri(reverse("cloud_callback", args=[normalized]))
+    redirect_uri = _build_cloud_redirect_uri(request, normalized)
     try:
         token_payload = exchange_oauth_code(
             provider=normalized,

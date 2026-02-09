@@ -103,8 +103,11 @@ WSGI_APPLICATION = 'endfieldpass.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'имя_базы_данных',
+        'USER': 'имя_пользователя_базы_данных',
+        'PASSWORD': 'пароль_базы_данных',
+        'HOST': 'localhost',
     }
 }
 
@@ -143,7 +146,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = os.getenv("DJANGO_STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 
@@ -153,13 +156,18 @@ GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
 YANDEX_OAUTH_CLIENT_ID = os.getenv("YANDEX_OAUTH_CLIENT_ID", "")
 YANDEX_OAUTH_CLIENT_SECRET = os.getenv("YANDEX_OAUTH_CLIENT_SECRET", "")
+GOOGLE_OAUTH_SCOPE = os.getenv("GOOGLE_OAUTH_SCOPE", "https://www.googleapis.com/auth/drive.file")
+YANDEX_OAUTH_SCOPE = os.getenv("YANDEX_OAUTH_SCOPE", "cloud_api:disk.app_folder")
+DJANGO_EXTERNAL_BASE_URL = os.getenv("DJANGO_EXTERNAL_BASE_URL", "").strip().rstrip("/")
 
 DONATE_URL = os.getenv("DONATE_URL", "https://github.com/sponsors/Overl1te")
 OFFICIAL_REPOSITORY_URL = os.getenv("OFFICIAL_REPOSITORY_URL", "https://github.com/Overl1te/EndfieldPass")
 
 if not DEBUG:
     # Typical reverse-proxy production setup (Nginx/Caddy/Traefik + Gunicorn/Uvicorn).
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # Enable only when upstream proxy really sends X-Forwarded-Proto.
+    if _env_bool("DJANGO_USE_X_FORWARDED_PROTO", default=False):
+        SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = _env_bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

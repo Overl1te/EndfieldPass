@@ -104,16 +104,24 @@ def _normalize_token_payload(payload):
     }
 
 
-def build_oauth_authorization_url(provider, client_id, redirect_uri, state):
+def _normalize_scope(scope, fallback):
+    raw_scope = str(scope or "").strip()
+    if not raw_scope:
+        raw_scope = fallback
+    return " ".join(part for part in raw_scope.replace(",", " ").split() if part)
+
+
+def build_oauth_authorization_url(provider, client_id, redirect_uri, state, scope=""):
     """Build provider OAuth authorization URL."""
     normalized = (provider or "").strip().lower()
     if normalized == "google_drive":
+        scope_value = _normalize_scope(scope, "https://www.googleapis.com/auth/drive.file")
         query = urlencode(
             {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "response_type": "code",
-                "scope": "https://www.googleapis.com/auth/drive.file",
+                "scope": scope_value,
                 "state": state,
                 "access_type": "offline",
                 "include_granted_scopes": "true",
@@ -123,13 +131,14 @@ def build_oauth_authorization_url(provider, client_id, redirect_uri, state):
         return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
     if normalized == "yandex_disk":
+        scope_value = _normalize_scope(scope, "cloud_api:disk.app_folder")
         query = urlencode(
             {
                 "response_type": "code",
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "state": state,
-                "scope": "cloud_api:disk.read cloud_api:disk.write",
+                "scope": scope_value,
                 "force_confirm": "yes",
             }
         )
@@ -525,4 +534,3 @@ def import_payload_from_cloud(provider, token, remote_ref=""):
     if normalized == "yandex_disk":
         return _yandex_download_json(access_token)
     raise CloudIntegrationError("Unknown cloud provider.")
-
