@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% load i18n_tags %}
+
+{% block title %}{% t "title.dashboard" %} | EndfieldPass{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <h1>{% t "dashboard.title" %}</h1>
+    <div class="header-actions">
+        <a href="{% url 'import_page' %}" class="btn">{% t "dashboard.action.import" %}</a>
+        <a href="{% url 'settings_page' %}" class="btn btn-outline">{% t "dashboard.action.settings" %}</a>
+    </div>
+</header>
+
+<section class="card-grid dashboard-grid">
+    {% for card in cards %}
+    <article class="wish-card wish-card--history" data-history-card>
+        <div class="wish-card-header">
+            <h2>{{ card.title }}</h2>
+        </div>
+
+        <div class="stat-row">
+            <span class="label">{% t "dashboard.total_wishes" %}</span>
+            <span class="value">{{ card.total }}</span>
+        </div>
+        <div class="stat-row">
+            <div>
+                <span class="label">{% t "dashboard.pity6" %}</span>
+                <span class="label-sub">{% t "dashboard.pity_suffix" limit=card.six_star_limit left=card.six_star_left %}</span>
+            </div>
+            <span class="value accent-orange">{{ card.six_star_pity }}</span>
+        </div>
+        <div class="stat-row">
+            <div>
+                <span class="label">{% t "dashboard.pity5" %}</span>
+                <span class="label-sub">{% t "dashboard.pity_suffix" limit=card.five_star_limit left=card.five_star_left %}</span>
+            </div>
+            <span class="value accent-gold">{{ card.five_star_pity }}</span>
+        </div>
+
+        <div class="wish-history" data-history-body>
+            <div class="rarity-pills">
+                <button class="rarity-pill active rarity-6" type="button" data-rarity-filter="6">6 ★</button>
+                <button class="rarity-pill active rarity-5" type="button" data-rarity-filter="5">5 ★</button>
+                <button class="rarity-pill active rarity-4" type="button" data-rarity-filter="4">4 ★</button>
+                <button class="rarity-pill active" type="button" data-rarity-filter="all">{% t "dashboard.filter.all" %}</button>
+            </div>
+
+            <div class="history-table-wrap">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>{% t "dashboard.table.name" %}</th>
+                            <th>{% t "dashboard.table.date" %}</th>
+                            <th>{% t "dashboard.table.guarantee" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in card.history_rows %}
+                        <tr data-rarity="{{ row.rarity }}">
+                            <td class="rarity-{{ row.rarity }}">{{ row.name }}</td>
+                            <td>{{ row.date }}</td>
+                            <td>{{ row.guarantee }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="3">{% t "dashboard.empty" %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <button
+            class="history-toggle history-toggle-bottom"
+            type="button"
+            data-history-toggle
+            aria-expanded="true"
+            aria-label="{% t 'dashboard.history.collapse' %}"
+        >
+            <span class="history-toggle-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" focusable="false">
+                    <path d="M4.75 12.5L10 7.25L15.25 12.5"></path>
+                </svg>
+            </span>
+        </button>
+    </article>
+    {% endfor %}
+</section>
+
+<script>
+(() => {
+    document.querySelectorAll("[data-history-card]").forEach((card) => {
+        const toggle = card.querySelector("[data-history-toggle]");
+        const body = card.querySelector("[data-history-body]");
+        const pills = card.querySelectorAll("[data-rarity-filter]");
+        const rows = card.querySelectorAll("tbody tr[data-rarity]");
+        const collapseLabel = "{% t 'dashboard.history.collapse' %}";
+        const expandLabel = "{% t 'dashboard.history.expand' %}";
+        const updateToggleLabel = (isExpanded) => {
+            toggle.setAttribute("aria-label", isExpanded ? collapseLabel : expandLabel);
+        };
+
+        updateToggleLabel(true);
+
+        toggle.addEventListener("click", () => {
+            const expanded = toggle.getAttribute("aria-expanded") === "true";
+            const nextExpanded = !expanded;
+            toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+            body.classList.toggle("collapsed", expanded);
+            updateToggleLabel(nextExpanded);
+        });
+
+        const allButton = card.querySelector('[data-rarity-filter="all"]');
+        const rarityButtons = Array.from(pills).filter((pill) => pill.dataset.rarityFilter !== "all");
+
+        const applyFilters = () => {
+            const activeValues = new Set(
+                rarityButtons
+                    .filter((pill) => pill.classList.contains("active"))
+                    .map((pill) => pill.dataset.rarityFilter)
+            );
+
+            if (activeValues.size === 0) {
+                rarityButtons.forEach((pill) => pill.classList.add("active"));
+                allButton.classList.add("active");
+                rows.forEach((row) => {
+                    row.hidden = false;
+                });
+                return;
+            }
+
+            const showAll = activeValues.size === rarityButtons.length;
+            allButton.classList.toggle("active", showAll);
+            rows.forEach((row) => {
+                row.hidden = !activeValues.has(row.dataset.rarity);
+            });
+        };
+
+        rarityButtons.forEach((pill) => {
+            pill.addEventListener("click", () => {
+                const activeCount = rarityButtons.filter((button) => button.classList.contains("active")).length;
+                const allSelected = activeCount === rarityButtons.length;
+
+                if (allSelected) {
+                    rarityButtons.forEach((button) => button.classList.toggle("active", button === pill));
+                } else {
+                    const willBeActive = !pill.classList.contains("active");
+                    pill.classList.toggle("active", willBeActive);
+                    const hasAnyActive = rarityButtons.some((button) => button.classList.contains("active"));
+                    if (!hasAnyActive) {
+                        pill.classList.add("active");
+                    }
+                }
+                applyFilters();
+            });
+        });
+
+        allButton.addEventListener("click", () => {
+            const shouldEnableAll = !allButton.classList.contains("active");
+            rarityButtons.forEach((pill) => pill.classList.toggle("active", shouldEnableAll));
+            allButton.classList.toggle("active", shouldEnableAll);
+            applyFilters();
+        });
+
+        applyFilters();
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% load static i18n_tags %}
+<!DOCTYPE html>
+<html lang="{{ current_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EndfieldPass{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'img/logo.png' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">
+                <a href="{% url 'dashboard' %}" class="brand-link" aria-label="EndfieldPass">
+                    <img src="{% static 'img/logo.png' %}" alt="EndfieldPass" class="brand-logo">
+                </a>
+                <div class="brand-text">
+                    <span class="brand-sub">Endfield</span>
+                    <span class="brand-main">Pass</span>
+                </div>
+            </div>
+            <nav class="menu">
+                <a href="{% url 'dashboard' %}" class="menu-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">{% t "menu.home" %}</a>
+                <a href="{% url 'characters_page' %}" class="menu-item {% if request.resolver_match.url_name == 'characters_page' %}active{% endif %}">{% t "menu.characters" %}</a>
+                <a href="{% url 'import_page' %}" class="menu-item {% if request.resolver_match.url_name == 'import_page' or request.resolver_match.url_name == 'import_view' %}active{% endif %}">{% t "menu.import" %}</a>
+                <a href="{% url 'settings_page' %}" class="menu-item {% if request.resolver_match.url_name == 'settings_page' or request.resolver_match.url_name == 'import_history' or request.resolver_match.url_name == 'cloud_connect' or request.resolver_match.url_name == 'cloud_callback' or request.resolver_match.url_name == 'cloud_disconnect' or request.resolver_match.url_name == 'cloud_export' or request.resolver_match.url_name == 'cloud_import' %}active{% endif %}">{% t "menu.settings" %}</a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'set_site_language' %}" class="language-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <label for="site-language" class="language-label">{% t "language.selector" %}</label>
+                    <select id="site-language" name="lang" onchange="this.form.submit()">
+                        {% for option in language_options %}
+                        <option value="{{ option.code }}" {% if current_lang == option.code %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+        </aside>
+
+        <main class="content">
+            <div class="content-body">
+                {% block content %}{% endblock %}
+            </div>
+            <footer class="site-footer">
+                <div class="site-footer-meta">
+                    <span class="site-footer-title">EndfieldPass</span>
+                    <span class="site-footer-copy">© 2026 Overl1te</span>
+                </div>
+                <nav class="site-footer-links" aria-label="{% t 'footer.aria' %}">
+                    <a href="https://github.com/Overl1te/EndfieldPass" target="_blank" rel="noopener noreferrer">GitHub</a>
+                    <a href="{% url 'privacy_policy' %}">{% t "footer.privacy" %}</a>
+                    <a href="{% url 'cookies_policy' %}">{% t "footer.cookies" %}</a>
+                </nav>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>

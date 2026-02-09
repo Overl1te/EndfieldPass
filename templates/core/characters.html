@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% load static i18n_tags %}
+
+{% block title %}{% t "title.characters" %} | EndfieldPass{% endblock %}
+
+{% block content %}
+<section class="characters-page">
+    <header class="page-header">
+        <h1>{% t "characters.title" %}</h1>
+    </header>
+
+    <section class="characters-grid">
+        {% for character in characters %}
+        <article class="character-card">
+            <div class="character-topline">
+                <span class="character-element">
+                    <img src="{% static 'img/type/' %}{{ character.element_icon }}" alt="{{ character.element_label }}" loading="lazy">
+                    {{ character.element_label }}
+                </span>
+                {% if character.is_obtained %}
+                <span class="character-status is-obtained">{% t "characters.obtained" %} · {{ character.obtained_date }}</span>
+                {% else %}
+                <span class="character-status is-missing">{% t "characters.missing" %}</span>
+                {% endif %}
+            </div>
+
+            <div class="character-avatar">
+                <img
+                    src="{% static 'img/characters/' %}{{ character.icon }}"
+                    alt="{{ character.name }}"
+                    loading="lazy"
+                    onerror="this.hidden=true; this.parentElement.classList.add('fallback');"
+                >
+                <span class="character-fallback">{{ character.name|slice:":1" }}</span>
+            </div>
+            <h2>{{ character.name }}</h2>
+
+            <div class="character-meta">
+                <span class="character-meta-item character-meta-rarity">
+                    {% t "characters.rarity" rarity=character.rarity %}
+                </span>
+                <span class="character-meta-item">
+                    <img src="{% static 'img/weapon/' %}{{ character.weapon_icon }}" alt="{{ character.weapon_label }}" loading="lazy">
+                    {{ character.weapon_label }}
+                </span>
+                <span class="character-meta-item">
+                    <img src="{% static 'img/role/' %}{{ character.role_icon }}" alt="{{ character.role_label }}" loading="lazy">
+                    {{ character.role_label }}
+                </span>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+</section>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% load i18n_tags %}
+
+{% block title %}{% t "title.settings" %} | EndfieldPass{% endblock %}
+
+{% block content %}
+<section class="settings-page">
+    <header class="page-header">
+        <h1>{% t "settings.title" %}</h1>
+    </header>
+
+    {% if status_message %}
+    <div class="settings-alert settings-alert--{{ status_message_type|default:'info' }}">
+        <strong>{{ status_message }}</strong>
+        {% if status_message_details %}
+        <span>{{ status_message_details }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="settings-grid">
+        <article class="settings-card">
+            <h2>{% t "settings.history.title" %}</h2>
+            <p>{% t "settings.history.desc" %}</p>
+            <div class="settings-actions">
+                <a class="btn" href="{% url 'export_history' %}">{% t "settings.history.export" %}</a>
+            </div>
+            <form method="post" action="{% url 'import_history' %}" enctype="multipart/form-data" class="settings-import-form">
+                {% csrf_token %}
+                <label for="history_file">{% t "settings.history.import_label" %}</label>
+                <input id="history_file" name="history_file" type="file" accept=".json,application/json" required>
+                <button type="submit" class="btn btn-outline">{% t "settings.history.import_btn" %}</button>
+            </form>
+            <p class="settings-hint">{% t "settings.history.hint" %}</p>
+        </article>
+
+        <article class="settings-card">
+            <h2>{% t "settings.support.title" %}</h2>
+            <p>{% t "settings.support.desc" %}</p>
+            <div class="settings-actions">
+                <a class="btn" href="{{ donate_url }}" target="_blank" rel="noopener noreferrer">{% t "settings.support.donate" %}</a>
+            </div>
+            <h2 class="settings-subtitle">{% t "settings.repo.title" %}</h2>
+            <p>{% t "settings.repo.desc" %}</p>
+            <div class="settings-actions">
+                <a class="btn btn-outline" href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">{% t "settings.repo.open" %}</a>
+            </div>
+        </article>
+
+        <article class="settings-card settings-card-wide">
+            <h2>{% t "settings.cloud.title" %}</h2>
+            <p>{% t "settings.cloud.desc" %}</p>
+            <p class="settings-hint">{% t "settings.cloud.folder_file" folder=cloud_folder_name file=cloud_file_name %}</p>
+
+            <div class="settings-cloud-grid">
+                {% for card in cloud_cards %}
+                <section class="settings-cloud-form">
+                    <div class="cloud-provider-head">
+                        <h3>{{ card.label }}</h3>
+                        <span class="cloud-status {% if card.connected %}is-connected{% else %}is-disconnected{% endif %}">
+                            {% if card.connected %}{% t "settings.cloud.connected" %}{% else %}{% t "settings.cloud.disconnected" %}{% endif %}
+                        </span>
+                    </div>
+
+                    {% if not card.configured %}
+                    <p>{% t "settings.cloud.not_configured" %}</p>
+                    <p class="settings-hint">{% t "settings.cloud.env_required" hint=card.setup_hint %}</p>
+                    {% elif not card.connected %}
+                    <p>{% t "settings.cloud.connect_hint" %}</p>
+                    <div class="settings-actions">
+                        <a class="btn" href="{% url 'cloud_connect' card.provider %}">{% t "settings.cloud.connect_btn" provider=card.label %}</a>
+                    </div>
+                    {% else %}
+                    <p>{% t "settings.cloud.sync_hint" path=cloud_folder_name|add:'/'|add:cloud_file_name %}</p>
+                    {% if card.token_expiring %}
+                    <p class="settings-hint">{% t "settings.cloud.expiring_hint" %}</p>
+                    {% endif %}
+                    <div class="cloud-actions-row">
+                        <form method="post" action="{% url 'cloud_export' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="provider" value="{{ card.provider }}">
+                            <button type="submit" class="btn">{% t "settings.cloud.sync_to" %}</button>
+                        </form>
+                        <form method="post" action="{% url 'cloud_import' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="provider" value="{{ card.provider }}">
+                            <button type="submit" class="btn btn-outline">{% t "settings.cloud.sync_from" %}</button>
+                        </form>
+                        <form method="post" action="{% url 'cloud_disconnect' card.provider %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline">{% t "settings.cloud.disconnect" %}</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </section>
+                {% endfor %}
+            </div>
+
+            <div class="settings-cloud-url-form">
+                <h3>{% t "settings.cloud.url.title" %}</h3>
+                <p class="settings-hint">{% t "settings.cloud.url.desc" %}</p>
+                <form method="post" action="{% url 'cloud_import' %}" class="settings-import-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="provider" value="url">
+                    <label for="cloud_url_remote_ref">{% t "settings.cloud.url.label" %}</label>
+                    <input id="cloud_url_remote_ref" name="remote_ref" type="text" placeholder="https://.../history.json" required>
+                    <button type="submit" class="btn btn-outline">{% t "settings.cloud.url.btn" %}</button>
+                </form>
+            </div>
+        </article>
+    </div>
+</section>
+{% endblock %}

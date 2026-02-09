@@ -1,0 +1,562 @@
+{% extends 'base.html' %}
+{% load i18n_tags %}
+
+{% block title %}{% t "title.import" %} | EndfieldPass{% endblock %}
+
+{% block content %}
+<section
+    class="import-page"
+    id="importPage"
+    data-create-session-url="{% url 'create_session' %}"
+    data-status-template="{% url 'import_status' 0 %}"
+    data-view-template="{% url 'import_view' 0 %}"
+    data-current-session-id="{% if session %}{{ session.id }}{% endif %}"
+>
+    <header class="import-header">
+        <h1>{% t "import.title" %}</h1>
+    </header>
+
+    <article class="import-hero">
+        <div class="hero-icon">✦</div>
+        <div>
+            <h2>{% t "import.hero.title" %}</h2>
+            <p>{% t "import.hero.desc" %}</p>
+            <p class="hero-warning">{% t "import.hero.warn" %}</p>
+        </div>
+    </article>
+
+    <div class="import-error" id="importError"{% if not error %} hidden{% endif %}>{{ error }}</div>
+
+    <section class="import-box">
+        <form method="post" class="import-form" id="importForm">
+            {% csrf_token %}
+            <div class="import-mode-switch">
+                <button type="button" class="mode-btn active" data-import-mode="auto">{% t "import.mode.auto" %}</button>
+                <button type="button" class="mode-btn" data-import-mode="manual">{% t "import.mode.manual" %}</button>
+            </div>
+            <input type="hidden" id="import_mode" name="import_mode" value="auto">
+
+            <div class="mode-panel" data-mode-panel="auto">
+                <label for="page_url">{% t "import.page_url" %}</label>
+                <textarea id="page_url" name="page_url" rows="4" placeholder="https://ef-webview.gryphline.com/page/gacha_char?...">{{ form.page_url }}</textarea>
+            </div>
+
+            <div class="form-grid mode-panel" data-mode-panel="manual" hidden>
+                <div>
+                    <label for="token">Token (u8_token)</label>
+                    <input id="token" name="token" type="text" value="{{ form.token }}" placeholder="{% t 'import.token.placeholder' %}">
+                </div>
+                <div>
+                    <label for="server_id">Server ID</label>
+                    <select id="server_id" name="server_id">
+                        <option value="1" {% if form.server_id == "1" %}selected{% endif %}>1</option>
+                        <option value="2" {% if form.server_id == "2" %}selected{% endif %}>2</option>
+                        <option value="3" {% if form.server_id == "3" %}selected{% endif %}>3</option>
+                        <option value="4" {% if form.server_id == "4" %}selected{% endif %}>4</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="lang">Language</label>
+                    <select id="lang" name="lang">
+                        <option value="ru-ru" {% if form.lang == "ru-ru" %}selected{% endif %}>ru-ru</option>
+                        <option value="en-us" {% if form.lang == "en-us" %}selected{% endif %}>en-us</option>
+                        <option value="ja-jp" {% if form.lang == "ja-jp" %}selected{% endif %}>ja-jp</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="btn import-submit" id="importSubmit">{% t "import.run" %}</button>
+        </form>
+    </section>
+
+    <section class="import-guide">
+        <h3>{% t "import.guide.title" %}</h3>
+        <div class="platform-switch" role="tablist" aria-label="{% t 'import.platform.aria' %}">
+            <button type="button" class="platform-btn active" data-platform-btn="windows" aria-selected="true">{% t "import.platform.windows" %}</button>
+            <button type="button" class="platform-btn" data-platform-btn="android" aria-selected="false">Android</button>
+            <button type="button" class="platform-btn" data-platform-btn="ios" aria-selected="false">iOS</button>
+        </div>
+
+        <div class="platform-panel" data-platform-panel="windows">
+            <ol>
+                <li>{% t "import.platform.step1" %}</li>
+                <li>{% t "import.platform.step2" %}</li>
+                <li>{% t "import.platform.step3" %}</li>
+                <li>{% t "import.platform.step4" %}</li>
+                <li>{% t "import.platform.step5" %}</li>
+            </ol>
+            <div class="import-script-wrap">
+                <pre class="import-script"><code id="powershellScript">iwr https://endfieldpass.site/endfieldpass.ps1 -UseBasicParsing -OutFile $env:TEMP\endfieldpass.ps1; & powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endfieldpass.ps1
+</code></pre>
+                <button type="button" class="btn btn-outline script-copy-btn" id="copyScriptButton">{% t "import.copy" %}</button>
+            </div>
+            <ol start="6">
+                <li>{% t "import.platform.step6" %}</li>
+                <li>{% t "import.platform.step7" %}</li>
+            </ol>
+        </div>
+
+        <div class="platform-panel" data-platform-panel="android" hidden>
+            <div class="platform-unavailable">
+                <strong>{% t "import.android_soon" %}</strong>
+                <p>{% t "import.platform.soon_desc" platform="Android" %}</p>
+            </div>
+        </div>
+
+        <div class="platform-panel" data-platform-panel="ios" hidden>
+            <div class="platform-unavailable">
+                <strong>{% t "import.ios_soon" %}</strong>
+                <p>{% t "import.platform.soon_desc" platform="iOS" %}</p>
+            </div>
+        </div>
+    </section>
+
+    {% if session %}
+    <section class="import-result">
+        <div class="result-meta">
+            <h3>{% t "import.result.header" id=session.id %}</h3>
+            <p>{% t "import.result.status" status=session.status %}{% if session.error %} | {% t "import.result.error" error=session.error %}{% endif %}</p>
+            <p>{% t "import.result.server_lang" server=session.server_id lang=session.lang %}</p>
+            <p><a href="{% url 'pulls_json' session.id %}">{% t "import.result.json" %}</a> · <a href="{% url 'pulls_api' %}?session_id={{ session.id }}">{% t "import.result.api" %}</a></p>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>seq</th>
+                        <th>pool</th>
+                        <th>rarity</th>
+                        <th>name</th>
+                        <th>free</th>
+                        <th>new</th>
+                        <th>ts</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pulls %}
+                    <tr>
+                        <td>{{ p.seq_id }}</td>
+                        <td>{{ p.pool_id }} ({{ p.pool_name }})</td>
+                        <td>{{ p.rarity }}</td>
+                        <td>{{ p.char_name }} ({{ p.char_id }})</td>
+                        <td>{{ p.is_free }}</td>
+                        <td>{{ p.is_new }}</td>
+                        <td>{{ p.gacha_ts }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                            <td colspan="7">{% t "import.result.none" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</section>
+
+<div class="loading-modal" id="loadingModal" hidden>
+    <div class="import-loading loading-modal-card">
+        <div class="loading-gear" aria-hidden="true"></div>
+        <p class="loading-message" id="loadingMessage">{% t "import.loading.prepare" %}</p>
+        <p class="loading-hint" id="loadingHint">{% t "import.loading.hint1" %}</p>
+        <div class="loading-progress-track" aria-hidden="true">
+            <div class="loading-progress-value" id="loadingProgress"></div>
+        </div>
+        <p class="loading-percent" id="loadingPercent">0%</p>
+    </div>
+</div>
+
+<script>
+(() => {
+    const page = document.getElementById("importPage");
+    if (!page) return;
+
+    const i18n = {
+        loadingPrepare: "{% t 'import.loading.prepare' %}",
+        loadingHint1: "{% t 'import.loading.hint1' %}",
+        loadingHint2: "{% t 'import.loading.hint2' %}",
+        loadingHint3: "{% t 'import.loading.hint3' %}",
+        loadingHint4: "{% t 'import.loading.hint4' %}",
+        errorTitle: "{% t 'import.error.title' %}",
+        errorDefault: "{% t 'import.error.default' %}",
+        errorRetry: "{% t 'import.error.retry' %}",
+        errorManualRequired: "{% t 'import.error.manual_required' %}",
+        errorAutoMissing: "{% t 'import.error.auto_missing' %}",
+        errorBadJson: "{% t 'import.error.bad_json' %}",
+        errorPostOnly: "{% t 'import.error.post_only' %}",
+        errorNeedLink: "{% t 'import.error.need_link' %}",
+        errorStatusFailed: "{% t 'import.error.status_failed' %}",
+        errorProcessing: "{% t 'import.error.processing' %}",
+        errorDoneOpening: "{% t 'import.error.done_opening' %}",
+        errorImportFailed: "{% t 'import.error.import_failed' %}",
+        errorInvalidSession: "{% t 'import.error.invalid_session' %}",
+        errorHeader: "{% t 'import.error.header' %}",
+        copied: "{% t 'import.copied' %}",
+        copy: "{% t 'import.copy' %}",
+        copyError: "{% t 'import.copy_error' %}",
+    };
+
+    const FORM_STORAGE_KEY = "endfieldpass:import_form";
+    const loadingHints = [
+        i18n.loadingHint1,
+        i18n.loadingHint2,
+        i18n.loadingHint3,
+        i18n.loadingHint4,
+    ];
+
+    const createSessionUrl = page.dataset.createSessionUrl;
+    const statusTemplate = page.dataset.statusTemplate;
+    const viewTemplate = page.dataset.viewTemplate;
+    const currentSessionId = page.dataset.currentSessionId;
+
+    const form = document.getElementById("importForm");
+    const submitButton = document.getElementById("importSubmit");
+    const importError = document.getElementById("importError");
+    const loadingModal = document.getElementById("loadingModal");
+    const loadingMessage = document.getElementById("loadingMessage");
+    const loadingHint = document.getElementById("loadingHint");
+    const loadingProgress = document.getElementById("loadingProgress");
+    const loadingPercent = document.getElementById("loadingPercent");
+    const importModeInput = document.getElementById("import_mode");
+    const modeButtons = document.querySelectorAll("[data-import-mode]");
+    const modePanels = document.querySelectorAll("[data-mode-panel]");
+    const platformButtons = document.querySelectorAll("[data-platform-btn]");
+    const platformPanels = document.querySelectorAll("[data-platform-panel]");
+    const copyScriptButton = document.getElementById("copyScriptButton");
+    const powershellScript = document.getElementById("powershellScript");
+
+    const pageUrlInput = document.getElementById("page_url");
+    const tokenInput = document.getElementById("token");
+    const serverSelect = document.getElementById("server_id");
+    const langSelect = document.getElementById("lang");
+
+    let displayedProgress = 0;
+    let targetProgress = 0;
+    let progressAnimationFrame = null;
+    let hintInterval = null;
+
+    const buildSessionUrl = (template, sessionId) => template.replace("/0/", `/${sessionId}/`);
+
+    const animateProgress = () => {
+        const diff = targetProgress - displayedProgress;
+        if (Math.abs(diff) < 0.2) {
+            displayedProgress = targetProgress;
+        } else {
+            displayedProgress += diff * 0.18;
+        }
+
+        loadingProgress.style.width = `${displayedProgress}%`;
+        loadingPercent.textContent = `${Math.round(displayedProgress)}%`;
+
+        if (displayedProgress !== targetProgress) {
+            progressAnimationFrame = window.requestAnimationFrame(animateProgress);
+            return;
+        }
+        progressAnimationFrame = null;
+    };
+
+    const setProgress = (progress, message) => {
+        const next = Math.max(0, Math.min(100, Number(progress) || 0));
+        targetProgress = Math.max(targetProgress, next);
+        if (message) loadingMessage.textContent = message;
+        if (!progressAnimationFrame) {
+            progressAnimationFrame = window.requestAnimationFrame(animateProgress);
+        }
+    };
+
+    const showError = (message, title = i18n.errorTitle) => {
+        importError.hidden = false;
+        importError.innerHTML = `<strong>${title}</strong><span>${message || i18n.errorDefault}</span>`;
+    };
+
+    const hideError = () => {
+        importError.hidden = true;
+        importError.innerHTML = "";
+    };
+
+    const runHintTicker = () => {
+        let idx = 0;
+        loadingHint.textContent = loadingHints[idx];
+        hintInterval = setInterval(() => {
+            idx = (idx + 1) % loadingHints.length;
+            loadingHint.textContent = loadingHints[idx];
+        }, 4500);
+    };
+
+    const stopHintTicker = () => {
+        if (hintInterval) {
+            clearInterval(hintInterval);
+            hintInterval = null;
+        }
+    };
+
+    const setLoadingState = (isLoading) => {
+        loadingModal.hidden = !isLoading;
+        submitButton.disabled = isLoading;
+        pageUrlInput.readOnly = isLoading;
+        tokenInput.readOnly = isLoading;
+        serverSelect.disabled = isLoading;
+        langSelect.disabled = isLoading;
+        document.body.classList.toggle("modal-open", isLoading);
+
+        if (!isLoading) {
+            stopHintTicker();
+            if (progressAnimationFrame) {
+                cancelAnimationFrame(progressAnimationFrame);
+                progressAnimationFrame = null;
+            }
+        }
+    };
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const applyMode = (mode) => {
+        importModeInput.value = mode;
+        modeButtons.forEach((button) => {
+            button.classList.toggle("active", button.dataset.importMode === mode);
+        });
+        modePanels.forEach((panel) => {
+            panel.hidden = panel.dataset.modePanel !== mode;
+        });
+    };
+
+    const applyPlatform = (platform) => {
+        platformButtons.forEach((button) => {
+            const isActive = button.dataset.platformBtn === platform;
+            button.classList.toggle("active", isActive);
+            button.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+        platformPanels.forEach((panel) => {
+            panel.hidden = panel.dataset.platformPanel !== platform;
+        });
+    };
+
+    const clearFieldErrors = () => {
+        [pageUrlInput, tokenInput, serverSelect, langSelect].forEach((field) => {
+            field.classList.remove("field-invalid");
+        });
+    };
+
+    const markFieldErrors = (fields) => {
+        fields.forEach((field) => {
+            if (field) field.classList.add("field-invalid");
+        });
+    };
+
+    const normalizeServerError = (rawMessage, mode) => {
+        const text = String(rawMessage || "").trim();
+        const lower = text.toLowerCase();
+
+        if (!text) return i18n.errorRetry;
+        if (lower.includes("missing token/server_id")) {
+            if (mode === "manual") {
+                return i18n.errorManualRequired;
+            }
+            return i18n.errorAutoMissing;
+        }
+        if (lower.includes("bad json")) {
+            return i18n.errorBadJson;
+        }
+        if (lower.includes("post only")) {
+            return i18n.errorPostOnly;
+        }
+        return text;
+    };
+
+    const validateImportForm = (mode) => {
+        clearFieldErrors();
+        if (mode === "manual") {
+            const invalidFields = [];
+            if (!tokenInput.value.trim()) invalidFields.push(tokenInput);
+            if (!serverSelect.value.trim()) invalidFields.push(serverSelect);
+            if (invalidFields.length) {
+                markFieldErrors(invalidFields);
+                return i18n.errorManualRequired;
+            }
+            return "";
+        }
+
+        const pageUrl = pageUrlInput.value.trim();
+        if (!pageUrl) {
+            markFieldErrors([pageUrlInput]);
+            return i18n.errorNeedLink;
+        }
+        return "";
+    };
+
+    const saveFormState = () => {
+        const activePlatform = document.querySelector("[data-platform-btn].active");
+        const payload = {
+            mode: importModeInput.value,
+            platform: activePlatform ? activePlatform.dataset.platformBtn : "windows",
+            token: tokenInput.value,
+            server_id: serverSelect.value,
+            lang: langSelect.value,
+        };
+        localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(payload));
+    };
+
+    const restoreFormState = () => {
+        try {
+            const raw = localStorage.getItem(FORM_STORAGE_KEY);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            if (data.mode === "manual" || data.mode === "auto") {
+                applyMode(data.mode);
+            }
+            if (data.platform === "windows" || data.platform === "android" || data.platform === "ios") {
+                applyPlatform(data.platform);
+            }
+            if (!tokenInput.value && data.token) tokenInput.value = data.token;
+            if (data.server_id) serverSelect.value = data.server_id;
+            if (data.lang) langSelect.value = data.lang;
+        } catch (_) {}
+    };
+
+    const pollImportStatus = async (sessionId) => {
+        const statusUrl = buildSessionUrl(statusTemplate, sessionId);
+        while (true) {
+            const response = await fetch(statusUrl, { cache: "no-store" });
+            if (!response.ok) throw new Error(i18n.errorStatusFailed);
+            const payload = await response.json();
+
+            if (Number.isFinite(payload.progress)) {
+                setProgress(payload.progress, payload.message || i18n.errorProcessing);
+            } else if (payload.message) {
+                loadingMessage.textContent = payload.message;
+            }
+
+            if (payload.status === "done") {
+                setProgress(100, i18n.errorDoneOpening);
+                window.location.href = buildSessionUrl(viewTemplate, sessionId);
+                return;
+            }
+
+            if (payload.status === "error") {
+                throw new Error(payload.error || i18n.errorImportFailed);
+            }
+            await sleep(1200);
+        }
+    };
+
+    const copyScriptToClipboard = async () => {
+        const text = powershellScript.textContent || "";
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            copyScriptButton.textContent = i18n.copied;
+            setTimeout(() => {
+                copyScriptButton.textContent = i18n.copy;
+            }, 1400);
+        } catch (_) {
+            copyScriptButton.textContent = i18n.copyError;
+            setTimeout(() => {
+                copyScriptButton.textContent = i18n.copy;
+            }, 1400);
+        }
+    };
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        hideError();
+        clearFieldErrors();
+        saveFormState();
+
+        const mode = importModeInput.value;
+        const validationMessage = validateImportForm(mode);
+        if (validationMessage) {
+            showError(validationMessage);
+            return;
+        }
+
+        displayedProgress = 0;
+        targetProgress = 0;
+        loadingProgress.style.width = "0%";
+        loadingPercent.textContent = "0%";
+        loadingMessage.textContent = i18n.loadingPrepare;
+        runHintTicker();
+        setLoadingState(true);
+        setProgress(2, i18n.loadingPrepare);
+
+        const payload = mode === "manual"
+            ? {
+                token: tokenInput.value.trim(),
+                server_id: serverSelect.value.trim(),
+                lang: langSelect.value.trim(),
+                page_url: "",
+            }
+            : {
+                page_url: pageUrlInput.value.trim(),
+                token: "",
+                server_id: "",
+                lang: "",
+            };
+
+        try {
+            const response = await fetch(createSessionUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(normalizeServerError(text, mode));
+            }
+
+            const result = await response.json();
+            if (!result.session_id) {
+                throw new Error(i18n.errorInvalidSession);
+            }
+
+            await pollImportStatus(result.session_id);
+        } catch (error) {
+            setLoadingState(false);
+            showError(normalizeServerError(error.message, mode), i18n.errorHeader);
+        }
+    });
+
+    modeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            applyMode(button.dataset.importMode);
+            clearFieldErrors();
+            hideError();
+            saveFormState();
+        });
+    });
+
+    platformButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            applyPlatform(button.dataset.platformBtn);
+            saveFormState();
+        });
+    });
+
+    if (copyScriptButton && powershellScript) {
+        copyScriptButton.addEventListener("click", copyScriptToClipboard);
+    }
+
+    [pageUrlInput, tokenInput, serverSelect, langSelect].forEach((field) => {
+        field.addEventListener("change", saveFormState);
+        field.addEventListener("input", saveFormState);
+        field.addEventListener("input", () => field.classList.remove("field-invalid"));
+    });
+
+    applyMode("auto");
+    applyPlatform("windows");
+    restoreFormState();
+    if (!currentSessionId) {
+        pageUrlInput.value = "";
+    }
+
+    if (!importError.hidden && importError.textContent.trim()) {
+        const message = normalizeServerError(importError.textContent.trim(), importModeInput.value);
+        showError(message, i18n.errorHeader);
+    }
+})();
+</script>
+{% endblock %}

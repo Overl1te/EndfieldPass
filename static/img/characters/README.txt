@@ -1,0 +1,25 @@
+Character icons currently used by the app:
+
+- laevatain.png
+- Ardelia.png
+- pogranichnik.png
+- snowshine.png
+- last-rite.png
+- antal.png
+- Endministrator.png
+- ember.png
+- lifeng.png
+- catcher.png
+- perlica.png
+- xaihi.png
+- akekuri.png
+- da-pan.png
+- alesh.png
+- Chen-Qianyu.png
+- estella.png
+- arclight.png
+- wulfgard.png
+- fluorite.png
+- avywenna.png
+- gilberta.png
+- yvonne.png
