@@ -1255,6 +1255,60 @@ body::before {
     gap: 16px;
 }
 
+.characters-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.characters-title-help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 1px solid rgba(240, 194, 67, 0.55);
+    background: rgba(240, 194, 67, 0.12);
+    color: #ffd86f;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: help;
+}
+
+.characters-title-help::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 220px;
+    max-width: min(420px, 70vw);
+    width: max-content;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(240, 194, 67, 0.45);
+    background: rgba(10, 14, 24, 0.98);
+    color: #e8e2cf;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: left;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 30;
+}
+
+.characters-title-help:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
 .characters-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(170px, 1fr));
@@ -1330,6 +1384,37 @@ body::before {
     display: grid;
     place-items: center;
     position: relative;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.character-avatar.is-p5 {
+    border-color: rgba(255, 215, 120, 0.92);
+    box-shadow:
+        0 0 0 1px rgba(255, 215, 120, 0.38),
+        0 0 18px rgba(255, 196, 74, 0.52),
+        0 0 34px rgba(255, 175, 58, 0.34);
+}
+
+.character-potential {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    min-width: 28px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(240, 194, 67, 0.95) 0%, rgba(255, 158, 61, 0.95) 100%);
+    border: 1px solid rgba(255, 222, 150, 0.72);
+    color: #1d1407;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
 }
 
 .character-avatar img {

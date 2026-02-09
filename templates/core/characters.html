@@ -6,7 +6,14 @@
 {% block content %}
 <section class="characters-page">
     <header class="page-header">
-        <h1>{% t "characters.title" %}</h1>
+        <h1 class="characters-title">
+            {% t "characters.title" %}
+            <span
+                class="characters-title-help"
+                data-tooltip="Учитываются только выпавшие персонажи, полученные иным путем не считаются"
+                aria-label="Учитываются только выпавшие персонажи, полученные иным путем не считаются"
+            >?</span>
+        </h1>
     </header>
 
     <section class="characters-grid">
@@ -31,6 +38,7 @@
             </div>
 
             <div class="character-avatar">
+                <span class="character-potential" data-character-potential title="Потенциал">P0</span>
                 <img
                     src="{% static 'img/characters/' %}{{ character.icon }}"
                     alt="{{ character.name }}"
@@ -64,10 +72,14 @@
     const missingLabel = "{% t 'characters.missing' %}";
     const unknownDateLabel = "{% t 'characters.date_unknown' %}";
 
-    const normalize = (value) => String(value || "")
-        .trim()
-        .toLowerCase()
-        .replace(/[\W_]+/g, "");
+    const normalize = (value) => {
+        const source = String(value || "").trim().toLowerCase().normalize("NFKC");
+        try {
+            return source.replace(/[^\p{L}\p{N}]+/gu, "");
+        } catch (_) {
+            return source.replace(/[\W_]+/g, "");
+        }
+    };
 
     const formatDate = (timestamp) => {
         const value = Number(timestamp) || 0;
@@ -85,10 +97,12 @@
         const obtained = new Map();
         const sorted = [...pulls].sort((a, b) => (Number(a.gacha_ts) || 0) - (Number(b.gacha_ts) || 0));
         sorted.forEach((pull) => {
-            const key = normalize(pull.char_name);
-            if (key && !obtained.has(key)) {
-                obtained.set(key, pull.gacha_ts || null);
-            }
+            const keys = [normalize(pull.char_name), normalize(pull.char_id)].filter(Boolean);
+            keys.forEach((key) => {
+                if (!obtained.has(key)) {
+                    obtained.set(key, pull.gacha_ts || null);
+                }
+            });
         });
         return obtained;
     };
@@ -98,6 +112,12 @@
         if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
         const pulls = historyApi.getLatestPulls() || [];
         const obtainedMap = buildObtainedMap(pulls);
+        const alwaysOwnedIcons = new Set(["Endministrator.png", "Chen-Qianyu.png", "perlica.png"]);
+        const forcedConstBonusIcons = new Set(["Chen-Qianyu.png", "perlica.png"]);
+        const normalizedPullKeySets = pulls.map((pull) => new Set([
+            normalize(pull.char_name),
+            normalize(pull.char_id),
+        ].filter(Boolean)));
         const firstHeroTs = [...pulls]
             .map((pull) => Number(pull.gacha_ts) || 0)
             .filter((value) => value > 0)
@@ -105,6 +125,8 @@
 
         document.querySelectorAll("[data-character-card]").forEach((card) => {
             const statusNode = card.querySelector("[data-character-status]");
+            const potentialNode = card.querySelector("[data-character-potential]");
+            const avatarNode = card.querySelector(".character-avatar");
             if (!statusNode) return;
 
             const iconName = String(card.dataset.characterIcon || "");
@@ -119,17 +141,38 @@
                 ...aliases,
             ]);
 
+            let dropCount = 0;
+            normalizedPullKeySets.forEach((pullKeys) => {
+                for (const key of lookupKeys) {
+                    if (pullKeys.has(key)) {
+                        dropCount += 1;
+                        break;
+                    }
+                }
+            });
+            const forcedBonus = forcedConstBonusIcons.has(iconName) ? 1 : 0;
+            const potential = Math.max(0, Math.min(5, (dropCount - 1) + forcedBonus));
+            if (potentialNode) {
+                potentialNode.textContent = `P${potential}`;
+            }
+            if (avatarNode) {
+                avatarNode.classList.toggle("is-p5", potential >= 5);
+            }
+
+            let hasMatch = false;
             let matchedTs = null;
             lookupKeys.forEach((key) => {
-                if (matchedTs) return;
-                if (obtainedMap.has(key)) matchedTs = obtainedMap.get(key);
+                if (!obtainedMap.has(key)) return;
+                hasMatch = true;
+                if (matchedTs === null) matchedTs = obtainedMap.get(key);
             });
 
-            if (iconName === "Endministrator.png") {
+            if (alwaysOwnedIcons.has(iconName)) {
+                hasMatch = true;
                 matchedTs = firstHeroTs;
             }
 
-            if (matchedTs || iconName === "Endministrator.png") {
+            if (hasMatch) {
                 statusNode.classList.remove("is-missing");
                 statusNode.classList.add("is-obtained");
                 statusNode.textContent = `${obtainedLabel} - ${formatDate(matchedTs)}`;
