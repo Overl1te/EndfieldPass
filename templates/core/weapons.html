@@ -16,7 +16,7 @@
         <article class="weapon-card" data-weapon-card>
             <div class="weapon-avatar weapon-rarity-{{ weapon.rarity }}">
                 <img
-                    src="{% static 'img/weapons/' %}{{ weapon.rarity }}/{{ weapon.icon }}"
+                    src="{{ weapon.icon_url }}"
                     alt="{{ weapon.name }}"
                     loading="lazy"
                     onerror="this.hidden=true; this.parentElement.classList.add('fallback');"

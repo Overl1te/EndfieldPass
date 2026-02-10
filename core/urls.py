@@ -26,4 +26,5 @@ urlpatterns = [
     path("api/import/<int:session_id>/status", views.import_status, name="import_status"),
     path("import/<int:session_id>/", views.import_view, name="import_view"),
     path("api/import/<int:session_id>/pulls", views.pulls_json, name="pulls_json"),
+    path("api/weapon-icon/<int:rarity>/<str:token>", views.weapon_icon, name="weapon_icon"),
 ]

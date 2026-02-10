@@ -8,17 +8,20 @@ This module contains:
 """
 
 import json
+import mimetypes
 import re
 import secrets
 import threading
 import time
+from functools import lru_cache
+from hashlib import sha1
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from django.conf import settings
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -306,10 +309,15 @@ def _build_weapon_name_refs(language):
     """Build lightweight weapon alias map for client-side name localization."""
     refs = []
     for key in WEAPON_OFFICIAL_NAMES.keys():
+        icon_name = f"{key}.webp"
+        icon_token = _weapon_icon_token(6, icon_name)
+        icon_url = reverse("weapon_icon", args=[6, icon_token]) if _weapon_icon_exists(6, icon_name) else ""
         refs.append(
             {
                 "name": _weapon_localized_name(key, language),
                 "aliases": _weapon_all_aliases(key),
+                "icon": icon_name,
+                "icon_url": icon_url,
             }
         )
     return refs
@@ -564,6 +572,8 @@ def _build_weapons_catalog(language):
                     "name": _weapon_localized_name(icon_path.stem, language),
                     "icon": icon_path.name,
                     "rarity": rarity,
+                    "icon_token": _weapon_icon_token(rarity, icon_path.name),
+                    "icon_url": reverse("weapon_icon", args=[rarity, _weapon_icon_token(rarity, icon_path.name)]),
                 }
             )
 
@@ -581,6 +591,64 @@ def weapons_page(request):
             "weapons": _build_weapons_catalog(language),
         },
     )
+
+
+def _weapon_icon_token(rarity: int, icon_name: str) -> str:
+    """Build stable ASCII token for weapon icon path."""
+    payload = f"{int(rarity)}/{str(icon_name or '').strip()}".encode("utf-8")
+    return sha1(payload).hexdigest()[:20]
+
+
+@lru_cache(maxsize=1)
+def _weapon_icon_index():
+    """Build token -> file path index from STATIC_ROOT/static weapon folders."""
+    supported_ext = {".webp", ".png", ".jpg", ".jpeg", ".avif"}
+    roots = []
+    static_root = str(getattr(settings, "STATIC_ROOT", "") or "").strip()
+    if static_root:
+        roots.append(Path(static_root))
+    roots.append(Path(settings.BASE_DIR) / "static")
+
+    index = {}
+    for root in roots:
+        weapons_root = root / "img" / "weapons"
+        if not weapons_root.exists():
+            continue
+        for rarity_dir in weapons_root.iterdir():
+            if not rarity_dir.is_dir():
+                continue
+            rarity_name = str(rarity_dir.name or "").strip()
+            if not rarity_name.isdigit():
+                continue
+            rarity = int(rarity_name)
+            for icon_path in rarity_dir.iterdir():
+                if not icon_path.is_file() or icon_path.suffix.lower() not in supported_ext:
+                    continue
+                icon_name = icon_path.name
+                token = _weapon_icon_token(rarity, icon_name)
+                index[(rarity, token)] = icon_path
+                index[(rarity, icon_name)] = icon_path
+    return index
+
+
+def _weapon_icon_exists(rarity: int, icon_name: str) -> bool:
+    """Check whether specific weapon icon exists in indexed static paths."""
+    if not icon_name:
+        return False
+    return (int(rarity), str(icon_name).strip()) in _weapon_icon_index()
+
+
+def weapon_icon(request, rarity: int, token: str):
+    """Serve weapon icon by stable ASCII token to avoid Unicode static URL issues."""
+    key = (int(rarity), str(token or "").strip())
+    icon_path = _weapon_icon_index().get(key)
+    if not icon_path or not icon_path.exists() or not icon_path.is_file():
+        raise Http404("Weapon icon not found.")
+
+    content_type, _ = mimetypes.guess_type(str(icon_path))
+    response = FileResponse(icon_path.open("rb"), content_type=content_type or "application/octet-stream")
+    response["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 def _to_int(value, default=0):

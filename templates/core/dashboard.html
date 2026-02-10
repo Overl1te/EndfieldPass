@@ -304,24 +304,30 @@
         }
     };
 
-    const buildWeaponNameMap = (refs) => {
-        const nameMap = new Map();
+    const buildWeaponMetaMap = (refs) => {
+        const metaMap = new Map();
         refs.forEach((ref) => {
             const localizedName = String(ref?.name || "").trim();
-            if (!localizedName) return;
+            const iconFile = String(ref?.icon || "").trim();
+            const iconUrl = String(ref?.icon_url || "").trim();
+            if (!localizedName && !iconFile) return;
             const aliases = Array.isArray(ref?.aliases) ? ref.aliases : [];
             aliases.forEach((rawAlias) => {
                 const normalized = normalizeSearchText(rawAlias);
-                if (!normalized || nameMap.has(normalized)) return;
-                nameMap.set(normalized, localizedName);
+                if (!normalized || metaMap.has(normalized)) return;
+                metaMap.set(normalized, {
+                    name: localizedName,
+                    icon: iconFile,
+                    iconUrl,
+                });
             });
         });
-        return nameMap;
+        return metaMap;
     };
 
-    const weaponNameMap = buildWeaponNameMap(parseWeaponNameRefs());
+    const weaponMetaMap = buildWeaponMetaMap(parseWeaponNameRefs());
 
-    const resolveLocalizedWeaponName = (pull) => {
+    const resolveWeaponMeta = (pull) => {
         const candidates = [
             pull?.weapon_name,
             pull?.char_name,
@@ -331,10 +337,15 @@
         for (const candidate of candidates) {
             const normalized = normalizeSearchText(candidate);
             if (!normalized) continue;
-            const localized = weaponNameMap.get(normalized);
-            if (localized) return localized;
+            const meta = weaponMetaMap.get(normalized);
+            if (meta) return meta;
         }
-        return "";
+        return null;
+    };
+
+    const resolveLocalizedWeaponName = (pull) => {
+        const meta = resolveWeaponMeta(pull);
+        return String(meta?.name || "").trim();
     };
 
     const resolvePullName = (pull, unknownValue) => {
@@ -549,6 +560,15 @@
     };
 
     const resolveWeaponLegendaryIconForPull = (pull) => {
+        const meta = resolveWeaponMeta(pull);
+        const mappedIconUrl = String(meta?.iconUrl || "").trim();
+        if (mappedIconUrl) return mappedIconUrl;
+
+        const mappedIcon = String(meta?.icon || "").trim();
+        if (mappedIcon) {
+            return `${weaponLegendaryIconBase}${encodePathSegment(mappedIcon)}`;
+        }
+
         const rawName = String(pull?.weapon_name || pull?.char_name || "").trim();
         if (!rawName) return "";
         const iconFile = rawName.toLowerCase().endsWith(".webp") ? rawName : `${rawName}.webp`;
