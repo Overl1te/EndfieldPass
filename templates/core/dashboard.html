@@ -1,5 +1,5 @@
-{% extends 'base.html' %}
-{% load i18n_tags %}
+﻿{% extends 'base.html' %}
+{% load i18n_tags static %}
 
 {% block title %}{% t "title.dashboard" %} | EndfieldPass{% endblock %}
 
@@ -12,7 +12,19 @@
     </div>
 </header>
 
-<section class="card-grid dashboard-grid">
+<section class="dashboard-empty-global" data-dashboard-empty hidden>
+    <p>{% t "dashboard.empty" %}</p>
+    <a href="{% url 'import_page' %}" class="btn">{% t "dashboard.action.import" %}</a>
+</section>
+
+<section class="legendary-strip-card" data-legendary-strip hidden>
+    <div class="wish-card-header">
+        <h2>6&#9733; {% t "characters.title" %}</h2>
+    </div>
+    <div class="legendary-strip" data-legendary-list></div>
+</section>
+
+<section class="card-grid dashboard-grid" data-dashboard-grid>
     {% for card in cards %}
     <article
         class="wish-card wish-card--history"
@@ -28,11 +40,11 @@
             <h2>{{ card.title }}</h2>
         </div>
 
-        <div class="stat-row">
+        <div class="stat-row stat-row--highlight stat-row--total">
             <span class="label">{% t "dashboard.total_wishes" %}</span>
             <span class="value" data-total>{{ card.total }}</span>
         </div>
-        <div class="stat-row">
+        <div class="stat-row stat-row--highlight stat-row--six">
             <div>
                 <span class="label">{% t "dashboard.pity6" %}</span>
                 <span
@@ -43,7 +55,7 @@
             </div>
             <span class="value accent-orange" data-six-pity>{{ card.six_star_pity }}</span>
         </div>
-        <div class="stat-row">
+        <div class="stat-row stat-row--highlight stat-row--five">
             <div>
                 <span class="label">{% t "dashboard.pity5" %}</span>
                 <span
@@ -55,11 +67,68 @@
             <span class="value accent-gold" data-five-pity>{{ card.five_star_pity }}</span>
         </div>
 
-        <div class="wish-history" data-history-body>
+        <div class="weapon-permanent-stats" data-weapon-permanent-stats hidden>
+            <h3 class="weapon-permanent-stats-title">
+                {% t "dashboard.weapon_permanent.title" %}
+                <span
+                    class="weapon-permanent-stats-help"
+                    data-tooltip="{% t 'dashboard.weapon_permanent.help' %}"
+                    aria-label="{% t 'dashboard.weapon_permanent.help' %}"
+                    tabindex="0"
+                >?</span>
+            </h3>
+            <div class="weapon-permanent-stat-row">
+                <span class="weapon-permanent-stat-label">{% t "dashboard.weapon_permanent.pool.solid_ice" %}</span>
+                <span class="weapon-permanent-stat-metrics">
+                    <span class="weapon-permanent-stat-value" data-weapon-permanent-count="solid_ice">0</span>
+                    <span class="weapon-permanent-stat-sep">|</span>
+                    <span class="weapon-permanent-stat-value weapon-permanent-stat-value--pity" data-weapon-permanent-pity="solid_ice">0</span>
+                </span>
+            </div>
+            <div class="weapon-permanent-stat-row">
+                <span class="weapon-permanent-stat-label">{% t "dashboard.weapon_permanent.pool.cosmic_voice" %}</span>
+                <span class="weapon-permanent-stat-metrics">
+                    <span class="weapon-permanent-stat-value" data-weapon-permanent-count="cosmic_voice">0</span>
+                    <span class="weapon-permanent-stat-sep">|</span>
+                    <span class="weapon-permanent-stat-value weapon-permanent-stat-value--pity" data-weapon-permanent-pity="cosmic_voice">0</span>
+                </span>
+            </div>
+            <div class="weapon-permanent-stat-row">
+                <span class="weapon-permanent-stat-label">{% t "dashboard.weapon_permanent.pool.far_expedition" %}</span>
+                <span class="weapon-permanent-stat-metrics">
+                    <span class="weapon-permanent-stat-value" data-weapon-permanent-count="far_expedition">0</span>
+                    <span class="weapon-permanent-stat-sep">|</span>
+                    <span class="weapon-permanent-stat-value weapon-permanent-stat-value--pity" data-weapon-permanent-pity="far_expedition">0</span>
+                </span>
+            </div>
+            <div class="weapon-permanent-stat-row">
+                <span class="weapon-permanent-stat-label">{% t "dashboard.weapon_permanent.pool.high_peak" %}</span>
+                <span class="weapon-permanent-stat-metrics">
+                    <span class="weapon-permanent-stat-value" data-weapon-permanent-count="high_peak">0</span>
+                    <span class="weapon-permanent-stat-sep">|</span>
+                    <span class="weapon-permanent-stat-value weapon-permanent-stat-value--pity" data-weapon-permanent-pity="high_peak">0</span>
+                </span>
+            </div>
+            <div class="weapon-permanent-stat-row">
+                <span class="weapon-permanent-stat-label">{% t "dashboard.weapon_permanent.pool.thunder_roll" %}</span>
+                <span class="weapon-permanent-stat-metrics">
+                    <span class="weapon-permanent-stat-value" data-weapon-permanent-count="thunder_roll">0</span>
+                    <span class="weapon-permanent-stat-sep">|</span>
+                    <span class="weapon-permanent-stat-value weapon-permanent-stat-value--pity" data-weapon-permanent-pity="thunder_roll">0</span>
+                </span>
+            </div>
+        </div>
+
+        <div class="history-empty-note" data-history-empty>
+            <p>{% t "dashboard.empty" %}</p>
+            <a href="{% url 'import_page' %}" class="btn btn-outline history-empty-action">{% t "dashboard.action.import" %}</a>
+        </div>
+
+        <div class="wish-history collapsed" data-history-body hidden>
             <div class="rarity-pills">
-                <button class="rarity-pill active rarity-6" type="button" data-rarity-filter="6">6 ★</button>
-                <button class="rarity-pill active rarity-5" type="button" data-rarity-filter="5">5 ★</button>
-                <button class="rarity-pill active rarity-4" type="button" data-rarity-filter="4">4 ★</button>
+                <button class="rarity-pill active rarity-6" type="button" data-rarity-filter="6">6&#9733;</button>
+                <button class="rarity-pill active rarity-5" type="button" data-rarity-filter="5">5&#9733;</button>
+                <button class="rarity-pill active rarity-4" type="button" data-rarity-filter="4">4&#9733;</button>
                 <button class="rarity-pill active" type="button" data-rarity-filter="all">{% t "dashboard.filter.all" %}</button>
             </div>
 
@@ -73,17 +142,9 @@
                         </tr>
                     </thead>
                     <tbody data-history-rows>
-                        {% for row in card.history_rows %}
-                        <tr data-rarity="{{ row.rarity }}">
-                            <td class="rarity-{{ row.rarity }}">{{ row.name }}</td>
-                            <td>{{ row.date }}</td>
-                            <td>{{ row.guarantee }}</td>
-                        </tr>
-                        {% empty %}
                         <tr>
                             <td colspan="3">{% t "dashboard.empty" %}</td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -93,8 +154,9 @@
             class="history-toggle history-toggle-bottom"
             type="button"
             data-history-toggle
-            aria-expanded="true"
-            aria-label="{% t 'dashboard.history.collapse' %}"
+            aria-expanded="false"
+            aria-label="{% t 'dashboard.history.expand' %}"
+            hidden
         >
             <span class="history-toggle-icon" aria-hidden="true">
                 <svg viewBox="0 0 20 20" focusable="false">
@@ -104,16 +166,495 @@
         </button>
     </article>
     {% endfor %}
+
+    <article class="wish-card dashboard-chart-card" data-date-chart-card>
+        <div class="wish-card-header">
+            <h2>{% t "dashboard.chart.title" %}</h2>
+        </div>
+        <div class="dashboard-chart-legend">
+            <span class="dashboard-chart-tag total">{% t "dashboard.total_wishes" %}</span>
+            <span class="dashboard-chart-tag pity6">{% t "dashboard.pity6" %}</span>
+            <span class="dashboard-chart-tag pity5">{% t "dashboard.pity5" %}</span>
+            <span class="dashboard-chart-tag weapon-pulls">{% t "dashboard.weapon_pulls" %}</span>
+            <span class="dashboard-chart-tag weapon6-points">{% t "dashboard.weapon6" %}</span>
+        </div>
+        <div class="dashboard-chart-toolbar">
+            <button class="chart-zoom-btn" type="button" data-chart-zoom-out aria-label="{% t 'dashboard.chart.zoom_out' %}">-</button>
+            <button class="chart-zoom-btn" type="button" data-chart-zoom-in aria-label="{% t 'dashboard.chart.zoom_in' %}">+</button>
+            <button class="chart-zoom-btn chart-zoom-reset" type="button" data-chart-zoom-reset>1x</button>
+            <span class="chart-zoom-value" data-chart-zoom-value>1x</span>
+        </div>
+        <p class="dashboard-chart-empty" data-chart-empty>{% t "dashboard.empty" %}</p>
+        <div class="dashboard-chart-wrap" data-chart-wrap>
+            <div class="dashboard-chart-scroller" data-chart-scroller>
+                <div class="dashboard-chart-canvas" data-pulls-chart hidden></div>
+            </div>
+            <div class="dashboard-chart-tooltip" data-chart-tooltip hidden></div>
+        </div>
+    </article>
 </section>
+
+{{ character_icon_refs|json_script:"dashboard-character-icon-refs" }}
+{{ weapon_name_refs|json_script:"dashboard-weapon-name-refs" }}
 
 <script>
 (() => {
+    const totalLabel = "{% t 'dashboard.total_wishes' %}";
+    const sixLabel = "{% t 'dashboard.pity6' %}";
+    const fiveLabel = "{% t 'dashboard.pity5' %}";
+    const fourLabel = "{% t 'dashboard.pity4_short' %}";
+    const legendaryPullsLabel = "{% t 'dashboard.pulls_word' %}";
+    const characterBannerLabel = "{% t 'dashboard.pool.character' %}";
+    const standardBannerLabel = "{% t 'dashboard.pool.standard' %}";
+    const beginnerBannerLabel = "{% t 'dashboard.pool.beginner' %}";
+    const weaponBannerLabel = "{% t 'dashboard.pool.weapon' %}";
+    const weaponSixLabel = "{% t 'dashboard.weapon6' %}";
+    const weaponPullsLabel = "{% t 'dashboard.weapon_pulls' %}";
+    const unknownBannerLabel = "{% t 'dashboard.pool.unknown' %}";
+    const emergencyRecruitmentLabel = "{% t 'dashboard.emergency_recruitment' %}";
+    const chartAriaLabel = "{% t 'dashboard.chart.aria' %}";
+    const unknownNameLabel = "{% t 'characters.unknown_name' %}";
+    const characterIconBase = "{% static 'img/characters/' %}";
+    const weaponLegendaryIconBase = "{% static 'img/weapons/6/' %}";
+    const weaponPermanentPoolDefs = [
+        { key: "solid_ice", match: ["крепкий лед", "крепкий лёд"] },
+        { key: "cosmic_voice", match: ["космический голос"] },
+        { key: "far_expedition", match: ["дальняя экспедиция"] },
+        { key: "high_peak", match: ["высокий пик"] },
+        { key: "thunder_roll", match: ["громовой раскат"] },
+    ];
+
     const formatDate = (ts) => {
         const value = Number(ts) || 0;
         if (!value) return "-";
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return "-";
         return date.toLocaleString();
+    };
+
+    const toLocalDateKey = (ts) => {
+        const date = new Date(Number(ts) || 0);
+        if (Number.isNaN(date.getTime())) return "";
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    };
+
+    const toBigIntOrNull = (value) => {
+        const source = String(value ?? "").trim();
+        if (!source) return null;
+        try {
+            return BigInt(source);
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const comparePullsDesc = (left, right) => {
+        const tsDelta = (Number(right?.gacha_ts) || 0) - (Number(left?.gacha_ts) || 0);
+        if (tsDelta !== 0) return tsDelta;
+
+        const leftSeqBig = toBigIntOrNull(left?.seq_id);
+        const rightSeqBig = toBigIntOrNull(right?.seq_id);
+        if (leftSeqBig !== null && rightSeqBig !== null && leftSeqBig !== rightSeqBig) {
+            return rightSeqBig > leftSeqBig ? 1 : -1;
+        }
+
+        const seqDelta = (Number(right?.seq_id) || 0) - (Number(left?.seq_id) || 0);
+        if (seqDelta !== 0) return seqDelta;
+
+        return String(right?.pool_id || "").localeCompare(String(left?.pool_id || ""));
+    };
+
+    const normalizeCharacterKey = (value) => {
+        const source = String(value || "").trim().toLowerCase().normalize("NFKC");
+        if (!source) return "";
+        try {
+            return source.replace(/[^\p{L}\p{N}]+/gu, "");
+        } catch (_) {
+            return source.replace(/[\W_]+/g, "");
+        }
+    };
+
+    const escapeHtml = (value) => String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const encodePathSegment = (value) => encodeURIComponent(String(value || "").trim()).replace(/%2F/gi, "/");
+    const normalizeSearchText = (value) => String(value || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/ё/g, "е")
+        .replace(/[«»"'`]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const parseWeaponNameRefs = () => {
+        const payloadNode = document.getElementById("dashboard-weapon-name-refs");
+        if (!payloadNode) return [];
+        try {
+            const parsed = JSON.parse(payloadNode.textContent || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+            return [];
+        }
+    };
+
+    const buildWeaponNameMap = (refs) => {
+        const nameMap = new Map();
+        refs.forEach((ref) => {
+            const localizedName = String(ref?.name || "").trim();
+            if (!localizedName) return;
+            const aliases = Array.isArray(ref?.aliases) ? ref.aliases : [];
+            aliases.forEach((rawAlias) => {
+                const normalized = normalizeSearchText(rawAlias);
+                if (!normalized || nameMap.has(normalized)) return;
+                nameMap.set(normalized, localizedName);
+            });
+        });
+        return nameMap;
+    };
+
+    const weaponNameMap = buildWeaponNameMap(parseWeaponNameRefs());
+
+    const resolveLocalizedWeaponName = (pull) => {
+        const candidates = [
+            pull?.weapon_name,
+            pull?.char_name,
+            pull?.weapon_id,
+            pull?.char_id,
+        ];
+        for (const candidate of candidates) {
+            const normalized = normalizeSearchText(candidate);
+            if (!normalized) continue;
+            const localized = weaponNameMap.get(normalized);
+            if (localized) return localized;
+        }
+        return "";
+    };
+
+    const resolvePullName = (pull, unknownValue) => {
+        const isWeapon = String(pull?.item_type || "").toLowerCase() === "weapon" || detectPoolCategory(pull) === "weapon";
+        if (isWeapon) {
+            const localizedWeaponName = resolveLocalizedWeaponName(pull);
+            if (localizedWeaponName) return localizedWeaponName;
+        } else {
+            const keys = [
+                normalizeCharacterKey(pull?.char_name),
+                normalizeCharacterKey(pull?.char_id),
+            ].filter(Boolean);
+            for (const key of keys) {
+                const localizedCharacterName = characterNameMap.get(key);
+                if (localizedCharacterName) return localizedCharacterName;
+            }
+        }
+        const charName = String(pull?.char_name || "").trim();
+        if (charName) return charName;
+        const charId = String(pull?.char_id || "").trim();
+        if (charId) return charId;
+        return String(unknownValue || "Unknown");
+    };
+
+    const isFreePull = (pull) => {
+        const raw = pull?.is_free;
+        if (typeof raw === "boolean") return raw;
+        const normalized = String(raw ?? "").trim().toLowerCase();
+        return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "y";
+    };
+
+    const detectPoolCategory = (pull) => {
+        const sourceType = String(pull?.source_pool_type || "").toLowerCase();
+        if (sourceType.includes("weapon")) return "weapon";
+        if (sourceType.includes("special")) return "special";
+        if (sourceType.includes("standard")) return "standard";
+        if (sourceType.includes("beginner")) return "beginner";
+
+        const haystack = `${String(pull?.pool_id || "")} ${String(pull?.pool_name || "")}`.toLowerCase();
+        const hasAny = (tokens) => tokens.some((token) => haystack.includes(token));
+
+        if (hasAny([
+            "weapon",
+            "weponbox",
+            "\u043e\u0440\u0443\u0436",
+            "\u043f\u043e\u0441\u0442\u0430\u0432\u043a",
+            "\u6b66\u5668",
+            "\u5175\u88c5",
+            "\u6b66\u5668\u7bb1",
+        ])) {
+            return "weapon";
+        }
+        if (hasAny([
+            "beginner",
+            "novice",
+            "newbie",
+            "starter",
+            "rookie",
+            "\u043d\u043e\u0432\u0438\u0447",
+            "\u65b0\u624b",
+            "\u521d\u5fc3\u8005",
+        ])) {
+            return "beginner";
+        }
+        if (hasAny([
+            "standard",
+            "normal",
+            "permanent",
+            "\u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442",
+            "\u043e\u0431\u044b\u0447",
+            "\u5e38\u9a7b",
+            "\u6052\u5e38",
+            "\u5e38\u8a2d",
+        ])) {
+            return "standard";
+        }
+        if (hasAny([
+            "special",
+            "featured",
+            "event",
+            "limited",
+            "character",
+            "\u043f\u0435\u0440\u0441\u043e\u043d\u0430\u0436",
+            "\u0438\u0432\u0435\u043d\u0442",
+            "\u89d2\u8272",
+            "\u9650\u5b9a",
+            "\u7279\u5225",
+            "\u30ad\u30e3\u30e9",
+        ])) {
+            return "special";
+        }
+        return "";
+    };
+
+    const resolveCardPoolCategory = (poolType, fallback) => {
+        const source = String(poolType || "").toLowerCase();
+        if (source.includes("weapon")) return "weapon";
+        if (source.includes("special")) return "special";
+        if (source.includes("standard")) return "standard";
+        if (source.includes("beginner")) return "beginner";
+        if (String(fallback || "").toLowerCase().includes("weponbox")) return "weapon";
+        if (String(fallback || "").toLowerCase().includes("weapon")) return "weapon";
+        if (String(fallback || "").toLowerCase().includes("special")) return "special";
+        if (String(fallback || "").toLowerCase().includes("standard")) return "standard";
+        if (String(fallback || "").toLowerCase().includes("beginner")) return "beginner";
+        return "";
+    };
+
+    const buildPoolCategoryHints = (pulls) => {
+        const hints = new Map();
+        pulls.forEach((pull) => {
+            const poolId = String(pull?.pool_id || "").trim().toLowerCase();
+            if (!poolId) return;
+            const category = detectPoolCategory(pull);
+            if (!category) return;
+            if (!hints.has(poolId)) {
+                hints.set(poolId, category);
+            }
+        });
+        return hints;
+    };
+
+    const parseCharacterIconRefs = () => {
+        const payloadNode = document.getElementById("dashboard-character-icon-refs");
+        if (!payloadNode) return [];
+        try {
+            const parsed = JSON.parse(payloadNode.textContent || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+            return [];
+        }
+    };
+
+    const buildCharacterIconMap = (refs) => {
+        const iconMap = new Map();
+        refs.forEach((ref) => {
+            const icon = String(ref?.icon || "").trim();
+            if (!icon) return;
+            const keys = Array.isArray(ref?.keys) ? ref.keys : [];
+            keys.forEach((rawKey) => {
+                const normalized = normalizeCharacterKey(rawKey);
+                if (!normalized || iconMap.has(normalized)) return;
+                iconMap.set(normalized, icon);
+            });
+        });
+        return iconMap;
+    };
+
+    const buildCharacterNameMap = (refs) => {
+        const nameMap = new Map();
+        refs.forEach((ref) => {
+            const localizedName = String(ref?.name || "").trim();
+            if (!localizedName) return;
+            const keys = Array.isArray(ref?.keys) ? ref.keys : [];
+            keys.forEach((rawKey) => {
+                const normalized = normalizeCharacterKey(rawKey);
+                if (!normalized || nameMap.has(normalized)) return;
+                nameMap.set(normalized, localizedName);
+            });
+        });
+        return nameMap;
+    };
+
+    const characterIconRefs = parseCharacterIconRefs();
+    const characterIconMap = buildCharacterIconMap(characterIconRefs);
+    const characterNameMap = buildCharacterNameMap(characterIconRefs);
+
+    const resolveLegendaryPoolKey = (pull, poolCategoryHints) => {
+        const sourceType = String(pull?.source_pool_type || "").trim().toLowerCase();
+        if (sourceType) return `source:${sourceType}`;
+
+        const poolId = String(pull?.pool_id || "").trim().toLowerCase();
+        const detectedCategory = detectPoolCategory(pull);
+        const hintedCategory = poolCategoryHints instanceof Map && poolId ? poolCategoryHints.get(poolId) : "";
+        const category = detectedCategory || hintedCategory;
+        if (category) return `category:${category}`;
+        if (poolId) return `pool:${poolId}`;
+        return "pool:global";
+    };
+
+    const resolveLegendaryPoolLabel = (pull, poolCategoryHints) => {
+        const sourceType = String(pull?.source_pool_type || "").trim().toLowerCase();
+        if (sourceType.includes("weapon")) return weaponBannerLabel;
+        if (sourceType.includes("special")) return characterBannerLabel;
+        if (sourceType.includes("standard")) return standardBannerLabel;
+        if (sourceType.includes("beginner")) return beginnerBannerLabel;
+
+        const poolId = String(pull?.pool_id || "").trim().toLowerCase();
+        const hintedCategory = poolCategoryHints instanceof Map && poolId ? poolCategoryHints.get(poolId) : "";
+        const category = detectPoolCategory(pull) || hintedCategory;
+        if (category === "weapon") return weaponBannerLabel;
+        if (category === "special") return characterBannerLabel;
+        if (category === "standard") return standardBannerLabel;
+        if (category === "beginner") return beginnerBannerLabel;
+
+        const poolName = String(pull?.pool_name || "").trim();
+        if (poolName) return poolName;
+        if (poolId) return poolId;
+        return unknownBannerLabel;
+    };
+
+    const resolveCharacterIconForPull = (pull) => {
+        const keys = [
+            normalizeCharacterKey(pull?.char_name),
+            normalizeCharacterKey(pull?.char_id),
+        ].filter(Boolean);
+        for (const key of keys) {
+            const icon = characterIconMap.get(key);
+            if (icon) return icon;
+        }
+        return "";
+    };
+
+    const resolveWeaponLegendaryIconForPull = (pull) => {
+        const rawName = String(pull?.weapon_name || pull?.char_name || "").trim();
+        if (!rawName) return "";
+        const iconFile = rawName.toLowerCase().endsWith(".webp") ? rawName : `${rawName}.webp`;
+        return `${weaponLegendaryIconBase}${encodePathSegment(iconFile)}`;
+    };
+
+    const classifyWeaponPermanentPoolKey = (poolName) => {
+        const normalized = normalizeSearchText(poolName);
+        if (!normalized) return "";
+        for (const def of weaponPermanentPoolDefs) {
+            if (def.match.some((needle) => normalized.includes(needle))) {
+                return def.key;
+            }
+        }
+        return "";
+    };
+
+    const pityBadgeToneClass = (value) => {
+        const pity = Number(value) || 0;
+        if (pity >= 60) return "is-high";
+        if (pity >= 30) return "is-mid";
+        return "is-low";
+    };
+
+    const renderLegendaryDrops = (card, pulls, poolCategoryHints) => {
+        if (!card) return 0;
+        const listNode = card.querySelector("[data-legendary-list]");
+        if (!listNode) return 0;
+
+        const chronological = [...pulls].sort((left, right) => -comparePullsDesc(left, right));
+        const pityByPool = new Map();
+        const drops = [];
+
+        chronological.forEach((pull) => {
+            const poolKey = resolveLegendaryPoolKey(pull, poolCategoryHints);
+            let currentPity = pityByPool.get(poolKey) || 0;
+            const isFree = isFreePull(pull);
+            if (!isFree) {
+                currentPity += 1;
+                pityByPool.set(poolKey, currentPity);
+            }
+
+            if ((Number(pull?.rarity) || 0) !== 6) return;
+
+            const name = resolvePullName(pull, unknownNameLabel);
+            const isWeapon = String(pull?.item_type || "").toLowerCase() === "weapon" || detectPoolCategory(pull) === "weapon";
+            drops.push({
+                name,
+                pity: isFree ? 0 : currentPity,
+                isFree,
+                poolLabel: resolveLegendaryPoolLabel(pull, poolCategoryHints),
+                iconType: isWeapon ? "weapon" : "character",
+                icon: isWeapon ? resolveWeaponLegendaryIconForPull(pull) : resolveCharacterIconForPull(pull),
+                ts: Number(pull?.gacha_ts) || 0,
+                seq: String(pull?.seq_id || ""),
+            });
+            if (!isFree) {
+                pityByPool.set(poolKey, 0);
+            }
+        });
+
+        if (!drops.length) {
+            listNode.innerHTML = "";
+            card.hidden = true;
+            return 0;
+        }
+
+        drops.sort((left, right) => {
+            const tsDelta = (Number(right.ts) || 0) - (Number(left.ts) || 0);
+            if (tsDelta !== 0) return tsDelta;
+            return String(right.seq || "").localeCompare(String(left.seq || ""));
+        });
+
+        listNode.innerHTML = drops.map((drop) => {
+            const rawName = String(drop.name || unknownNameLabel).trim() || unknownNameLabel;
+            const escapedName = escapeHtml(rawName);
+            const fallbackChar = escapeHtml(rawName.slice(0, 1).toUpperCase() || "?");
+            const rawPoolLabel = String(drop.poolLabel || unknownBannerLabel).trim() || unknownBannerLabel;
+            const iconHtml = drop.icon
+                ? `
+                    <img
+                        src="${drop.iconType === "weapon"
+                            ? escapeHtml(drop.icon)
+                            : `${characterIconBase}${escapeHtml(drop.icon)}`}"
+                        alt="${escapedName}"
+                        loading="lazy"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"
+                    >
+                    <span class="legendary-chip-fallback">${fallbackChar}</span>
+                `
+                : `<span class="legendary-chip-fallback" style="display:grid;">${fallbackChar}</span>`;
+            const tooltipLabel = drop.isFree
+                ? `${rawName} • ${emergencyRecruitmentLabel} • ${rawPoolLabel}`
+                : `${rawName} • ${drop.pity} ${legendaryPullsLabel} • ${rawPoolLabel}`;
+            const pityText = drop.isFree ? "0" : String(drop.pity);
+
+            return `
+                <article class="legendary-chip" data-tooltip="${escapeHtml(tooltipLabel)}" aria-label="${escapeHtml(tooltipLabel)}" tabindex="0">
+                    ${iconHtml}
+                    <span class="legendary-chip-pity ${pityBadgeToneClass(drop.pity)}">${pityText}</span>
+                </article>
+            `;
+        }).join("");
+
+        card.hidden = false;
+        return drops.length;
     };
 
     const pityCounterUntilAny = (rarities, resetValues) => {
@@ -130,9 +671,479 @@
         return [current, Math.max(hardLimit - current, 0)];
     };
 
-    const renderCardFromPulls = (card, pulls) => {
+    const renderDateChart = (card, pulls) => {
+        if (!card) return;
+        card.__chartPulls = pulls;
+
+        const chartNode = card.querySelector("[data-pulls-chart]");
+        const emptyNode = card.querySelector("[data-chart-empty]");
+        const chartWrap = card.querySelector("[data-chart-wrap]");
+        const scrollerNode = card.querySelector("[data-chart-scroller]");
+        const tooltipNode = card.querySelector("[data-chart-tooltip]");
+        const zoomOutButton = card.querySelector("[data-chart-zoom-out]");
+        const zoomInButton = card.querySelector("[data-chart-zoom-in]");
+        const zoomResetButton = card.querySelector("[data-chart-zoom-reset]");
+        const zoomValueNode = card.querySelector("[data-chart-zoom-value]");
+
+        if (!chartNode || !emptyNode) return;
+        if (!chartWrap || !scrollerNode || !tooltipNode) return;
+
+        const zoomLevels = [1, 1.5, 2, 3, 4, 5, 6];
+        if (!card.__chartState) {
+            card.__chartState = { zoomIndex: 0, snapToLatest: true };
+        }
+        const state = card.__chartState;
+        state.zoomIndex = Math.max(0, Math.min(zoomLevels.length - 1, Number(state.zoomIndex) || 0));
+
+        if (!card.__chartControlsBound) {
+            const rerender = () => renderDateChart(card, card.__chartPulls || []);
+            if (zoomOutButton) {
+                zoomOutButton.addEventListener("click", () => {
+                    if (state.zoomIndex <= 0) return;
+                    state.zoomIndex -= 1;
+                    state.snapToLatest = true;
+                    rerender();
+                });
+            }
+            if (zoomInButton) {
+                zoomInButton.addEventListener("click", () => {
+                    if (state.zoomIndex >= zoomLevels.length - 1) return;
+                    state.zoomIndex += 1;
+                    state.snapToLatest = true;
+                    rerender();
+                });
+            }
+            if (zoomResetButton) {
+                zoomResetButton.addEventListener("click", () => {
+                    state.zoomIndex = 0;
+                    state.snapToLatest = true;
+                    rerender();
+                });
+            }
+            scrollerNode.addEventListener("mouseleave", () => {
+                if (typeof card.__chartHideHover === "function") {
+                    card.__chartHideHover();
+                } else {
+                    tooltipNode.hidden = true;
+                }
+            });
+            card.__chartControlsBound = true;
+        }
+
+        const zoom = zoomLevels[state.zoomIndex];
+        if (zoomValueNode) zoomValueNode.textContent = `${zoom.toFixed(1).replace('.0', '')}x`;
+        if (zoomOutButton) zoomOutButton.disabled = state.zoomIndex <= 0;
+        if (zoomInButton) zoomInButton.disabled = state.zoomIndex >= zoomLevels.length - 1;
+
+        const byDate = new Map();
+        pulls.forEach((pull) => {
+            const ts = Number(pull?.gacha_ts) || 0;
+            if (!ts) return;
+            const key = toLocalDateKey(ts);
+            if (!key) return;
+            const current = byDate.get(key) || {
+                date: key,
+                total: 0,
+                six: 0,
+                five: 0,
+                four: 0,
+                weaponSix: 0,
+                weaponPulls: 0,
+            };
+            current.total += 1;
+            const rarity = Number(pull?.rarity) || 0;
+            const poolCategory = detectPoolCategory(pull);
+            const isWeaponPull = String(pull?.item_type || "").toLowerCase() === "weapon" || poolCategory === "weapon";
+            if (isWeaponPull) {
+                current.weaponPulls += 1;
+                if (rarity === 6) current.weaponSix += 1;
+            } else if (rarity === 6) {
+                current.six += 1;
+            }
+            if (rarity === 5) current.five += 1;
+            if (rarity === 4) current.four += 1;
+            byDate.set(key, current);
+        });
+
+        const points = Array.from(byDate.values())
+            .map((point) => ({
+                date: point.date,
+                total: point.total,
+                six: point.six,
+                five: point.five,
+                four: point.four,
+                weaponSix: point.weaponSix,
+                weaponPulls: point.weaponPulls,
+            }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        if (!points.length) {
+            emptyNode.hidden = false;
+            chartNode.hidden = true;
+            tooltipNode.hidden = true;
+            chartNode.innerHTML = "";
+            return;
+        }
+
+        emptyNode.hidden = true;
+        chartNode.hidden = false;
+
+        const baseWidth = Math.max(1100, Math.round(scrollerNode.clientWidth || 1100));
+        const width = Math.max(baseWidth, Math.round(baseWidth * zoom));
+        const height = 340;
+        const paddingLeft = 44;
+        const paddingRight = 18;
+        const paddingTop = 24;
+        const paddingBottom = 42;
+        const plotWidth = width - paddingLeft - paddingRight;
+        const plotHeight = height - paddingTop - paddingBottom;
+        const pointCount = points.length;
+        const denom = Math.max(pointCount - 1, 1);
+        const maxYRaw = Math.max(
+            1,
+            ...points.map((point) => point.total),
+            ...points.map((point) => point.weaponPulls),
+            ...points.map((point) => point.five),
+            ...points.map((point) => point.six),
+            ...points.map((point) => point.weaponSix)
+        );
+
+        // Build a "nice" rounded Y axis so labels are clean (e.g. 160/120/80/40).
+        const toNiceInterval = (rawValue) => {
+            const value = Math.max(1, Number(rawValue) || 1);
+            const magnitude = 10 ** Math.floor(Math.log10(value));
+            const normalized = value / magnitude;
+            const ladder = [1, 2, 3, 4, 5, 8, 10];
+            const bucket = ladder.find((item) => normalized <= item) || 10;
+            return bucket * magnitude;
+        };
+        const yInterval = toNiceInterval(maxYRaw / 4);
+        const maxY = Math.max(4, yInterval * 4);
+
+        const toX = (index) => paddingLeft + ((plotWidth * index) / denom);
+        const toY = (value) => paddingTop + plotHeight - ((Number(value) || 0) / maxY) * plotHeight;
+
+        const buildSeries = (key) => points.map((point, index) => ({
+            x: toX(index),
+            y: toY(point[key]),
+            point,
+        }));
+
+        const buildSmoothPath = (series) => {
+            if (!series.length) return "";
+            if (series.length === 1) {
+                const x = series[0].x.toFixed(2);
+                const y = series[0].y.toFixed(2);
+                return `M${x} ${y} L${x} ${y}`;
+            }
+
+            let path = `M${series[0].x.toFixed(2)} ${series[0].y.toFixed(2)}`;
+            for (let index = 1; index < series.length; index += 1) {
+                const prev = series[index - 1];
+                const current = series[index];
+                const distance = current.x - prev.x;
+                const c1x = (prev.x + (distance * 0.34)).toFixed(2);
+                const c2x = (current.x - (distance * 0.34)).toFixed(2);
+                path += ` C${c1x} ${prev.y.toFixed(2)} ${c2x} ${current.y.toFixed(2)} ${current.x.toFixed(2)} ${current.y.toFixed(2)}`;
+            }
+            return path;
+        };
+
+        const buildAreaPath = (series) => {
+            if (!series.length) return "";
+            const baselineY = (paddingTop + plotHeight).toFixed(2);
+            const linePath = buildSmoothPath(series);
+            const last = series[series.length - 1];
+            const first = series[0];
+            return `${linePath} L${last.x.toFixed(2)} ${baselineY} L${first.x.toFixed(2)} ${baselineY} Z`;
+        };
+
+        const guideLines = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = (paddingTop + (plotHeight * ratio)).toFixed(2);
+            return `<line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}"></line>`;
+        }).join("");
+
+        const yAxisLabels = [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+            const yValue = yInterval * (4 - index);
+            const y = (paddingTop + (plotHeight * ratio) + 3).toFixed(2);
+            return `<text class="chart-axis-label y" x="${(paddingLeft - 8).toFixed(2)}" y="${y}" text-anchor="end">${yValue}</text>`;
+        }).join("");
+
+        const daySplits = points.map((point, index) => {
+            const x = toX(index).toFixed(2);
+            return `<line class="chart-day-split" x1="${x}" y1="${paddingTop}" x2="${x}" y2="${(paddingTop + plotHeight).toFixed(2)}"></line>`;
+        }).join("");
+
+        const formatAxisDateLabel = (dayKey) => {
+            const date = new Date(`${dayKey}T00:00:00`);
+            if (Number.isNaN(date.getTime())) return dayKey;
+            return new Intl.DateTimeFormat(undefined, {
+                day: "2-digit",
+                month: "2-digit",
+            }).format(date);
+        };
+
+        const xLabelIndices = [];
+        if (pointCount === 1) {
+            xLabelIndices.push(0);
+        } else {
+            const step = Math.max(1, Math.ceil((pointCount - 1) / 5));
+            for (let index = 0; index < pointCount; index += step) {
+                xLabelIndices.push(index);
+            }
+            if (xLabelIndices[xLabelIndices.length - 1] !== pointCount - 1) {
+                xLabelIndices.push(pointCount - 1);
+            }
+        }
+
+        const xAxisLabels = xLabelIndices.map((index) => {
+            const point = points[index];
+            if (!point) return "";
+            const x = toX(index).toFixed(2);
+            const anchor = index === 0 ? "start" : (index === pointCount - 1 ? "end" : "middle");
+            return `<text class="chart-axis-label x" x="${x}" y="${(paddingTop + plotHeight + 24).toFixed(2)}" text-anchor="${anchor}">${formatAxisDateLabel(point.date)}</text>`;
+        }).join("");
+
+        const totalSeries = buildSeries("total");
+        const sixSeries = buildSeries("six");
+        const weaponPullSeries = buildSeries("weaponPulls");
+        const fiveSeries = buildSeries("five");
+
+        const buildDots = (series, key, radius) => series
+            .filter(({ point }) => Number(point[key]) > 0)
+            .map(({ x, y, point }) => {
+                const details = `${point.date}: ${totalLabel} ${point.total} (${sixLabel} ${point.six}, ${weaponSixLabel} ${point.weaponSix}, ${weaponPullsLabel} ${point.weaponPulls}, ${fiveLabel} ${point.five}, ${fourLabel} ${point.four})`;
+                return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius}"><title>${details}</title></circle>`;
+            })
+            .join("");
+
+        const hoverZones = points.map((point, index) => {
+            const currentX = toX(index);
+            const leftX = index === 0 ? paddingLeft : (toX(index - 1) + currentX) / 2;
+            const rightX = index === pointCount - 1 ? (width - paddingRight) : (toX(index + 1) + currentX) / 2;
+            return `<rect class="chart-hover-zone" data-point-index="${index}" x="${leftX.toFixed(2)}" y="${paddingTop.toFixed(2)}" width="${Math.max(2, rightX - leftX).toFixed(2)}" height="${plotHeight.toFixed(2)}"></rect>`;
+        }).join("");
+
+        chartNode.innerHTML = `
+            <svg viewBox="0 0 ${width} ${height}" class="dashboard-chart-svg" role="img" aria-label="${escapeHtml(chartAriaLabel)}" style="width:${width}px">
+                <defs>
+                    <linearGradient id="totalLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#8be2ff"></stop>
+                        <stop offset="100%" stop-color="#3ca7ff"></stop>
+                    </linearGradient>
+                    <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="rgba(94, 184, 255, 0.24)"></stop>
+                        <stop offset="100%" stop-color="rgba(94, 184, 255, 0.02)"></stop>
+                    </linearGradient>
+                </defs>
+                <g class="chart-axis-labels y">${yAxisLabels}</g>
+                <g class="chart-guides">${guideLines}</g>
+                <g class="chart-day-splits">${daySplits}</g>
+                <path d="${buildAreaPath(totalSeries)}" class="chart-area total"></path>
+                <path d="${buildSmoothPath(totalSeries)}" class="chart-line total"></path>
+                <path d="${buildSmoothPath(sixSeries)}" class="chart-line six"></path>
+                <path d="${buildSmoothPath(weaponPullSeries)}" class="chart-line weapon-pulls"></path>
+                <path d="${buildSmoothPath(fiveSeries)}" class="chart-line five"></path>
+                <g class="chart-dots total">${buildDots(totalSeries, "total", 3.2)}</g>
+                <g class="chart-dots six">${buildDots(sixSeries, "six", 2.8)}</g>
+                <g class="chart-dots weapon-pulls">${buildDots(weaponPullSeries, "weaponPulls", 2.8)}</g>
+                <g class="chart-dots weapon-six-events">${points
+                    .map((point, pointIndex) => ({ point, pointIndex }))
+                    .filter(({ point }) => Number(point.weaponSix) > 0 && Number(point.weaponPulls) > 0)
+                    .map(({ point, pointIndex }) => {
+                        const x = toX(pointIndex).toFixed(2);
+                        const y = toY(point.weaponPulls).toFixed(2);
+                        const details = `${point.date}: ${weaponSixLabel} ${point.weaponSix}`;
+                        return `<circle cx="${x}" cy="${y}" r="4.4"><title>${details}</title></circle>`;
+                    })
+                    .join("")}</g>
+                <g class="chart-dots five">${buildDots(fiveSeries, "five", 2.8)}</g>
+                <g class="chart-hover-guide">
+                    <line class="chart-hover-stick" data-chart-hover-stick x1="${paddingLeft}" y1="${paddingTop}" x2="${paddingLeft}" y2="${(paddingTop + plotHeight).toFixed(2)}"></line>
+                </g>
+                <g class="chart-hover-points" data-chart-hover-points>
+                    <circle class="hover-point total" data-point-total cx="${paddingLeft}" cy="${paddingTop}" r="3.6"></circle>
+                    <circle class="hover-point six" data-point-six cx="${paddingLeft}" cy="${paddingTop}" r="3.4"></circle>
+                    <circle class="hover-point weapon-pulls" data-point-weapon-pulls cx="${paddingLeft}" cy="${paddingTop}" r="3.4"></circle>
+                    <circle class="hover-point weapon-six-drop" data-point-weapon-six-drop cx="${paddingLeft}" cy="${paddingTop}" r="4.6"></circle>
+                    <circle class="hover-point five" data-point-five cx="${paddingLeft}" cy="${paddingTop}" r="3.4"></circle>
+                </g>
+                <g class="chart-hover-layer">${hoverZones}</g>
+                <g class="chart-axis-labels x">${xAxisLabels}</g>
+            </svg>
+        `;
+
+        const formatDayLabel = (dayKey) => {
+            const date = new Date(`${dayKey}T00:00:00`);
+            if (Number.isNaN(date.getTime())) return dayKey;
+            return new Intl.DateTimeFormat(undefined, {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+            }).format(date);
+        };
+
+        const getPointerPosition = (event) => {
+            if (!event) return null;
+            if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+                return { clientX: event.clientX, clientY: event.clientY };
+            }
+            const touch = event.touches?.[0] || event.changedTouches?.[0];
+            if (touch && Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)) {
+                return { clientX: touch.clientX, clientY: touch.clientY };
+            }
+            return null;
+        };
+
+        const setTooltipPosition = (event) => {
+            const pointer = getPointerPosition(event);
+            if (!pointer) return;
+            const wrapRect = chartWrap.getBoundingClientRect();
+            const pad = 10;
+            const tooltipWidth = tooltipNode.offsetWidth || 220;
+            const tooltipHeight = tooltipNode.offsetHeight || 76;
+            const pointerX = pointer.clientX - wrapRect.left;
+            const pointerY = pointer.clientY - wrapRect.top;
+
+            let left = pointerX + 14;
+            if (left + tooltipWidth + pad > wrapRect.width) {
+                left = pointerX - tooltipWidth - 12;
+            }
+            left = Math.max(pad, Math.min(left, wrapRect.width - tooltipWidth - pad));
+
+            let top = pointerY - tooltipHeight - 10;
+            if (top < pad) {
+                top = pointerY + 12;
+            }
+            top = Math.max(pad, Math.min(top, wrapRect.height - tooltipHeight - pad));
+
+            tooltipNode.style.left = `${left}px`;
+            tooltipNode.style.top = `${top}px`;
+        };
+
+        const hoverNodes = chartNode.querySelectorAll(".chart-hover-zone[data-point-index]");
+        const hoverStickNode = chartNode.querySelector("[data-chart-hover-stick]");
+        const hoverPointsGroup = chartNode.querySelector("[data-chart-hover-points]");
+        const hoverPointTotal = chartNode.querySelector("[data-point-total]");
+        const hoverPointSix = chartNode.querySelector("[data-point-six]");
+        const hoverPointWeaponPulls = chartNode.querySelector("[data-point-weapon-pulls]");
+        const hoverPointWeaponSixDrop = chartNode.querySelector("[data-point-weapon-six-drop]");
+        const hoverPointFive = chartNode.querySelector("[data-point-five]");
+        let activePointIndex = -1;
+        let touchPinned = false;
+
+        const hideHoverState = () => {
+            tooltipNode.hidden = true;
+            activePointIndex = -1;
+            touchPinned = false;
+            if (hoverStickNode) hoverStickNode.classList.remove("is-visible");
+            if (hoverPointsGroup) hoverPointsGroup.classList.remove("is-visible");
+        };
+
+        const showHoverState = (index, event, options = {}) => {
+            const point = points[index];
+            if (!point) return;
+            const isTouchInput = Boolean(options.touch);
+            touchPinned = isTouchInput;
+            activePointIndex = index;
+
+            tooltipNode.innerHTML = `
+                <strong>${formatDayLabel(point.date)}</strong>
+                <span>${totalLabel}: ${point.total}</span>
+                <span>${sixLabel}: ${point.six} | ${weaponSixLabel}: ${point.weaponSix}</span>
+                <span>${weaponPullsLabel}: ${point.weaponPulls}</span>
+                <span>${fiveLabel}: ${point.five} | ${fourLabel}: ${point.four}</span>
+            `;
+            tooltipNode.hidden = false;
+            setTooltipPosition(event);
+
+            const x = toX(index).toFixed(2);
+            if (hoverStickNode) {
+                hoverStickNode.setAttribute("x1", x);
+                hoverStickNode.setAttribute("x2", x);
+                hoverStickNode.classList.add("is-visible");
+            }
+            if (hoverPointsGroup) {
+                hoverPointsGroup.classList.add("is-visible");
+            }
+            if (hoverPointTotal) {
+                hoverPointTotal.setAttribute("cx", x);
+                hoverPointTotal.setAttribute("cy", toY(point.total).toFixed(2));
+            }
+            if (hoverPointSix) {
+                hoverPointSix.setAttribute("cx", x);
+                hoverPointSix.setAttribute("cy", toY(point.six).toFixed(2));
+                hoverPointSix.classList.toggle("is-hidden", Number(point.six) <= 0);
+            }
+            if (hoverPointWeaponPulls) {
+                hoverPointWeaponPulls.setAttribute("cx", x);
+                hoverPointWeaponPulls.setAttribute("cy", toY(point.weaponPulls).toFixed(2));
+                hoverPointWeaponPulls.classList.toggle("is-hidden", Number(point.weaponPulls) <= 0);
+            }
+            if (hoverPointWeaponSixDrop) {
+                hoverPointWeaponSixDrop.setAttribute("cx", x);
+                hoverPointWeaponSixDrop.setAttribute("cy", toY(point.weaponPulls).toFixed(2));
+                hoverPointWeaponSixDrop.classList.toggle("is-hidden", Number(point.weaponSix) <= 0 || Number(point.weaponPulls) <= 0);
+            }
+            if (hoverPointFive) {
+                hoverPointFive.setAttribute("cx", x);
+                hoverPointFive.setAttribute("cy", toY(point.five).toFixed(2));
+                hoverPointFive.classList.toggle("is-hidden", Number(point.five) <= 0);
+            }
+        };
+
+        card.__chartHideHover = hideHoverState;
+        if (!card.__chartTouchDismissBound) {
+            document.addEventListener("pointerdown", (event) => {
+                if (event.pointerType === "mouse") return;
+                if (chartWrap.contains(event.target)) return;
+                if (typeof card.__chartHideHover === "function") {
+                    card.__chartHideHover();
+                }
+            }, true);
+            card.__chartTouchDismissBound = true;
+        }
+
+        hoverNodes.forEach((node) => {
+            node.addEventListener("mouseenter", (event) => {
+                const index = Number(node.getAttribute("data-point-index"));
+                showHoverState(index, event, { touch: false });
+            });
+            node.addEventListener("mousemove", (event) => {
+                if (tooltipNode.hidden) return;
+                if (touchPinned) return;
+                setTooltipPosition(event);
+            });
+            node.addEventListener("pointerdown", (event) => {
+                if (event.pointerType === "mouse") return;
+                const index = Number(node.getAttribute("data-point-index"));
+                const isSamePointTap = touchPinned && activePointIndex === index && !tooltipNode.hidden;
+                if (isSamePointTap) {
+                    hideHoverState();
+                    return;
+                }
+                showHoverState(index, event, { touch: true });
+            });
+            node.addEventListener("mouseleave", () => {
+                if (touchPinned) return;
+                hideHoverState();
+            });
+        });
+
+        if (state.snapToLatest) {
+            window.requestAnimationFrame(() => {
+                scrollerNode.scrollLeft = 0;
+                state.snapToLatest = false;
+            });
+        }
+    };
+
+    const renderCardFromPulls = (card, pulls, poolCategoryHints) => {
         const poolType = String(card.dataset.sourcePoolType || "");
         const poolFallback = String(card.dataset.poolFallback || "").toLowerCase();
+        const poolCategory = resolveCardPoolCategory(poolType, poolFallback);
+        const isWeaponCard = poolCategory === "weapon";
+        card.classList.toggle("is-weapon-card", isWeaponCard);
         const sixLimit = Number.parseInt(card.dataset.sixLimit || "80", 10) || 80;
         const fiveLimit = Number.parseInt(card.dataset.fiveLimit || "10", 10) || 10;
         const emptyText = card.dataset.emptyText || "No data";
@@ -140,12 +1151,56 @@
 
         const relevant = pulls.filter((pull) => {
             const byType = String(pull.source_pool_type || "") === poolType;
-            const byFallback = String(pull.pool_id || "").toLowerCase().includes(poolFallback);
-            return byType || byFallback;
-        }).sort((a, b) => (Number(b.seq_id) || 0) - (Number(a.seq_id) || 0));
+            const poolId = String(pull.pool_id || "").toLowerCase();
+            const poolName = String(pull.pool_name || "").toLowerCase();
+            const byFallback = poolId.includes(poolFallback) || poolName.includes(poolFallback);
+            const byCategory = poolCategory && detectPoolCategory(pull) === poolCategory;
+            const byHint = poolCategory && poolCategoryHints instanceof Map && poolCategoryHints.get(poolId) === poolCategory;
+            return byType || byFallback || byCategory || byHint;
+        }).sort(comparePullsDesc);
+
+        const chronological = [...relevant].reverse();
+        const buildWeaponSupplyGroups = (items) => {
+            const groups = [];
+            const groupMap = new Map();
+            items.forEach((pull, index) => {
+                const poolId = String(pull?.pool_id || "").trim().toLowerCase();
+                const ts = Number(pull?.gacha_ts) || 0;
+                const seq = String(pull?.seq_id ?? index);
+                const key = ts ? `${poolId}:${ts}` : `${poolId}:seq:${seq}`;
+                if (!groupMap.has(key)) {
+                    const group = { key, pulls: [] };
+                    groupMap.set(key, group);
+                    groups.push(group);
+                }
+                groupMap.get(key).pulls.push(pull);
+            });
+            return groups;
+        };
+        const weaponSupplyGroups = isWeaponCard ? buildWeaponSupplyGroups(chronological) : [];
 
         const rarities = relevant.map((pull) => Number(pull.rarity) || 0);
-        const [sixPity, sixLeft] = pityStateWithResets(rarities, new Set([6]), sixLimit);
+        let sixPity = 0;
+        let sixLeft = sixLimit;
+        if (isWeaponCard) {
+            const supplyHardLimit = Math.max(1, Math.ceil(sixLimit / 10));
+            const supplyRarities = weaponSupplyGroups
+                .map((group) => {
+                    const paidPulls = group.pulls.filter((pull) => !isFreePull(pull));
+                    if (!paidPulls.length) return null;
+                    const hasSix = paidPulls.some((pull) => (Number(pull?.rarity) || 0) === 6);
+                    return hasSix ? 6 : 0;
+                })
+                .filter((value) => value !== null);
+            const [supplyPity, supplyLeft] = pityStateWithResets(supplyRarities, new Set([6]), supplyHardLimit);
+            sixPity = supplyPity * 10;
+            sixLeft = supplyLeft * 10;
+        } else {
+            const sixPityRarities = relevant
+                .filter((pull) => !isFreePull(pull))
+                .map((pull) => Number(pull.rarity) || 0);
+            [sixPity, sixLeft] = pityStateWithResets(sixPityRarities, new Set([6]), sixLimit);
+        }
         const [fivePity, fiveLeft] = pityStateWithResets(rarities, new Set([5, 6]), fiveLimit);
 
         const totalNode = card.querySelector("[data-total]");
@@ -153,6 +1208,40 @@
         const fivePityNode = card.querySelector("[data-five-pity]");
         const sixSubNode = card.querySelector("[data-six-sub]");
         const fiveSubNode = card.querySelector("[data-five-sub]");
+        const sixStatRow = card.querySelector(".stat-row--six");
+        const fiveStatRow = card.querySelector(".stat-row--five");
+        const weaponPermanentStatsNode = card.querySelector("[data-weapon-permanent-stats]");
+        if (sixStatRow) sixStatRow.hidden = isWeaponCard;
+        if (fiveStatRow) fiveStatRow.hidden = isWeaponCard;
+        if (weaponPermanentStatsNode) weaponPermanentStatsNode.hidden = !isWeaponCard;
+        if (weaponPermanentStatsNode && isWeaponCard) {
+            const stats = new Map(weaponPermanentPoolDefs.map((def) => [def.key, { total: 0, pity6: 0 }]));
+            chronological.forEach((pull) => {
+                const poolName = String(pull?.pool_name || pull?.poolName || "");
+                const key = classifyWeaponPermanentPoolKey(poolName);
+                if (!key) return;
+                const state = stats.get(key) || { total: 0, pity6: 0 };
+                state.total += 1;
+                const isFree = isFreePull(pull);
+                if (!isFree) {
+                    state.pity6 += 1;
+                }
+                if ((Number(pull?.rarity) || 0) === 6 && !isFree) {
+                    state.pity6 = 0;
+                }
+                stats.set(key, state);
+            });
+            weaponPermanentStatsNode.querySelectorAll("[data-weapon-permanent-count]").forEach((node) => {
+                const key = String(node.getAttribute("data-weapon-permanent-count") || "");
+                const state = stats.get(key) || { total: 0, pity6: 0 };
+                node.textContent = String(state.total || 0);
+            });
+            weaponPermanentStatsNode.querySelectorAll("[data-weapon-permanent-pity]").forEach((node) => {
+                const key = String(node.getAttribute("data-weapon-permanent-pity") || "");
+                const state = stats.get(key) || { total: 0, pity6: 0 };
+                node.textContent = String(state.pity6 || 0);
+            });
+        }
         if (totalNode) totalNode.textContent = String(rarities.length);
         if (sixPityNode) sixPityNode.textContent = String(sixPity);
         if (fivePityNode) fivePityNode.textContent = String(fivePity);
@@ -166,73 +1255,161 @@
         }
 
         const historyRowsNode = card.querySelector("[data-history-rows]");
-        if (!historyRowsNode) return;
+        const historyBody = card.querySelector("[data-history-body]");
+        const toggle = card.querySelector("[data-history-toggle]");
+        const emptyState = card.querySelector("[data-history-empty]");
+        if (!historyRowsNode) return 0;
 
-        const visiblePulls = relevant.slice(0, 120);
-        const chronological = [...visiblePulls].reverse();
-        let pity6 = 0;
+        let pity6Paid = 0;
         let pity5 = 0;
         let pity4 = 0;
         const rows = [];
-        chronological.forEach((pull) => {
-            const rarity = Number(pull.rarity) || 0;
-            pity6 += 1;
-            pity5 += 1;
-            pity4 += 1;
-            let guarantee = pity4;
-            if (rarity === 6) {
-                guarantee = pity6;
-                pity6 = 0;
-                pity5 = 0;
-                pity4 = 0;
-            } else if (rarity === 5) {
-                guarantee = pity5;
-                pity5 = 0;
-                pity4 = 0;
-            } else if (rarity === 4) {
-                guarantee = pity4;
-                pity4 = 0;
-            }
-            rows.push({
-                rarity,
-                name: pull.char_name || pull.char_id || unknownName,
-                date: formatDate(pull.gacha_ts),
-                guarantee,
+        if (isWeaponCard) {
+            weaponSupplyGroups.forEach((group) => {
+                const paidPulls = group.pulls.filter((pull) => !isFreePull(pull));
+                const hasPaidSupply = paidPulls.length > 0;
+                if (hasPaidSupply) {
+                    pity6Paid += 1;
+                }
+                const supplyHasPaidSix = paidPulls.some((pull) => (Number(pull?.rarity) || 0) === 6);
+
+                group.pulls.forEach((pull) => {
+                    const rarity = Number(pull.rarity) || 0;
+                    const isFree = isFreePull(pull);
+                    pity5 += 1;
+                    pity4 += 1;
+                    let guarantee = pity4;
+                    if (rarity === 6) {
+                        if (isFree) {
+                            guarantee = "-";
+                        } else {
+                            guarantee = pity6Paid * 10;
+                        }
+                        pity5 = 0;
+                        pity4 = 0;
+                    } else if (rarity === 5) {
+                        guarantee = pity5;
+                        pity5 = 0;
+                        pity4 = 0;
+                    } else if (rarity === 4) {
+                        guarantee = pity4;
+                        pity4 = 0;
+                    }
+                    rows.push({
+                        rarity,
+                        name: resolvePullName(pull, unknownName),
+                        date: formatDate(pull.gacha_ts),
+                        guarantee,
+                        isFree,
+                        poolLabel: String(pull?.pool_name || pull?.pool_id || weaponBannerLabel),
+                    });
+                });
+
+                if (supplyHasPaidSix) {
+                    pity6Paid = 0;
+                }
             });
-        });
+        } else {
+            chronological.forEach((pull) => {
+                const rarity = Number(pull.rarity) || 0;
+                const isFree = isFreePull(pull);
+                if (!isFree) {
+                    pity6Paid += 1;
+                }
+                pity5 += 1;
+                pity4 += 1;
+                let guarantee = pity4;
+                if (rarity === 6) {
+                    if (isFree) {
+                        guarantee = "-";
+                    } else {
+                        guarantee = pity6Paid;
+                        pity6Paid = 0;
+                    }
+                    pity5 = 0;
+                    pity4 = 0;
+                } else if (rarity === 5) {
+                    guarantee = pity5;
+                    pity5 = 0;
+                    pity4 = 0;
+                } else if (rarity === 4) {
+                    guarantee = pity4;
+                    pity4 = 0;
+                }
+                rows.push({
+                    rarity,
+                    name: resolvePullName(pull, unknownName),
+                    date: formatDate(pull.gacha_ts),
+                    guarantee,
+                    isFree,
+                    poolLabel: "",
+                });
+            });
+        }
 
         const finalRows = rows.reverse();
-        if (!finalRows.length) {
-            historyRowsNode.innerHTML = `<tr><td colspan="3">${emptyText}</td></tr>`;
-            return;
+        const hasHistory = finalRows.length > 0;
+        if (toggle) toggle.hidden = !hasHistory;
+        if (historyBody) {
+            historyBody.hidden = !hasHistory;
+            if (!hasHistory) {
+                historyBody.classList.add("collapsed");
+            }
         }
-        historyRowsNode.innerHTML = finalRows.map((row) => `
-            <tr data-rarity="${row.rarity}">
-                <td class="rarity-${row.rarity}">${row.name}</td>
-                <td>${row.date}</td>
-                <td>${row.guarantee}</td>
-            </tr>
-        `).join("");
+        if (emptyState) emptyState.hidden = hasHistory;
+
+        if (!hasHistory) {
+            historyRowsNode.innerHTML = `<tr><td colspan="3">${emptyText}</td></tr>`;
+            return 0;
+        }
+
+        historyRowsNode.innerHTML = finalRows.map((row) => {
+            const freeBadge = row.isFree
+                ? `<span class="history-free-badge">${escapeHtml(emergencyRecruitmentLabel)}</span>`
+                : "";
+            const poolLabel = row.poolLabel
+                ? `<span class="history-pool-name">${escapeHtml(row.poolLabel)}</span>`
+                : "";
+            return `
+                <tr data-rarity="${row.rarity}">
+                    <td class="rarity-${row.rarity}">
+                        <span class="history-main">
+                            <span class="history-name">${escapeHtml(row.name)}</span>
+                            ${poolLabel}
+                        </span>
+                        ${freeBadge}
+                    </td>
+                    <td>${escapeHtml(row.date)}</td>
+                    <td>${escapeHtml(row.guarantee)}</td>
+                </tr>
+            `;
+        }).join("");
+        return finalRows.length;
     };
 
     document.querySelectorAll("[data-history-card]").forEach((card) => {
         const toggle = card.querySelector("[data-history-toggle]");
         const body = card.querySelector("[data-history-body]");
         const pills = card.querySelectorAll("[data-rarity-filter]");
+        if (!toggle || !body || !pills.length) return;
+
         const collapseLabel = "{% t 'dashboard.history.collapse' %}";
         const expandLabel = "{% t 'dashboard.history.expand' %}";
         const updateToggleLabel = (isExpanded) => {
             toggle.setAttribute("aria-label", isExpanded ? collapseLabel : expandLabel);
         };
 
-        updateToggleLabel(true);
+        const setExpandedState = (isExpanded) => {
+            toggle.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+            body.classList.toggle("collapsed", !isExpanded);
+            updateToggleLabel(isExpanded);
+        };
+
+        setExpandedState(toggle.getAttribute("aria-expanded") === "true");
 
         toggle.addEventListener("click", () => {
             const expanded = toggle.getAttribute("aria-expanded") === "true";
-            const nextExpanded = !expanded;
-            toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
-            body.classList.toggle("collapsed", expanded);
-            updateToggleLabel(nextExpanded);
+            setExpandedState(!expanded);
         });
 
         const allButton = card.querySelector('[data-rarity-filter="all"]');
@@ -248,7 +1425,7 @@
 
             if (activeValues.size === 0) {
                 rarityButtons.forEach((pill) => pill.classList.add("active"));
-                allButton.classList.add("active");
+                if (allButton) allButton.classList.add("active");
                 rows.forEach((row) => {
                     row.hidden = false;
                 });
@@ -256,7 +1433,7 @@
             }
 
             const showAll = activeValues.size === rarityButtons.length;
-            allButton.classList.toggle("active", showAll);
+            if (allButton) allButton.classList.toggle("active", showAll);
             rows.forEach((row) => {
                 row.hidden = !activeValues.has(row.dataset.rarity);
             });
@@ -281,24 +1458,67 @@
             });
         });
 
-        allButton.addEventListener("click", () => {
-            const shouldEnableAll = !allButton.classList.contains("active");
-            rarityButtons.forEach((pill) => pill.classList.toggle("active", shouldEnableAll));
-            allButton.classList.toggle("active", shouldEnableAll);
-            applyFilters();
-        });
+        if (allButton) {
+            allButton.addEventListener("click", () => {
+                const shouldEnableAll = !allButton.classList.contains("active");
+                rarityButtons.forEach((pill) => pill.classList.toggle("active", shouldEnableAll));
+                allButton.classList.toggle("active", shouldEnableAll);
+                applyFilters();
+            });
+        }
 
         applyFilters();
     });
 
     const renderDashboard = () => {
         const historyApi = window.endfieldPassHistory;
-        if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
-        const pulls = historyApi.getLatestPulls() || [];
-        document.querySelectorAll("[data-history-card]").forEach((card) => {
-            renderCardFromPulls(card, pulls);
+        if (!historyApi) return;
+        const pullGetter = typeof historyApi.getAllPulls === "function"
+            ? historyApi.getAllPulls
+            : historyApi.getLatestPulls;
+        if (typeof pullGetter !== "function") return;
+
+        const pulls = pullGetter() || [];
+        const gridNode = document.querySelector("[data-dashboard-grid]");
+        const emptyNode = document.querySelector("[data-dashboard-empty]");
+        const legendaryStripCard = document.querySelector("[data-legendary-strip]");
+        const historyCards = document.querySelectorAll("[data-history-card]");
+        const dateChart = document.querySelector("[data-date-chart-card]");
+
+        const poolCategoryHints = buildPoolCategoryHints(pulls);
+        let totalRelevantPulls = 0;
+        historyCards.forEach((card) => {
+            const count = renderCardFromPulls(card, pulls, poolCategoryHints);
+            totalRelevantPulls += Number(count) || 0;
         });
-        document.querySelectorAll("[data-history-card]").forEach((card) => {
+
+        const hasAnyPulls = totalRelevantPulls > 0;
+        if (gridNode) {
+            gridNode.hidden = !hasAnyPulls;
+            gridNode.style.display = hasAnyPulls ? "" : "none";
+        }
+        if (emptyNode) emptyNode.hidden = hasAnyPulls;
+        if (!hasAnyPulls) {
+            if (legendaryStripCard) legendaryStripCard.hidden = true;
+            historyCards.forEach((card) => {
+                card.hidden = true;
+            });
+            if (dateChart) dateChart.hidden = true;
+            return;
+        }
+
+        renderLegendaryDrops(legendaryStripCard, pulls, poolCategoryHints);
+
+        historyCards.forEach((card) => {
+            card.hidden = false;
+        });
+        if (dateChart) dateChart.hidden = false;
+
+        historyCards.forEach((card) => {
+            renderCardFromPulls(card, pulls, poolCategoryHints);
+        });
+
+        historyCards.forEach((card) => {
             const allButton = card.querySelector('[data-rarity-filter="all"]');
             const rarityButtons = Array.from(card.querySelectorAll("[data-rarity-filter]"))
                 .filter((pill) => pill.dataset.rarityFilter !== "all");
@@ -314,6 +1534,8 @@
                 row.hidden = activeValues.size ? !activeValues.has(row.dataset.rarity) : false;
             });
         });
+
+        renderDateChart(dateChart, pulls);
     };
 
     const bootDashboard = () => {

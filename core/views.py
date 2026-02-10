@@ -14,6 +14,7 @@ import threading
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from django.conf import settings
@@ -76,6 +77,13 @@ DASHBOARD_POOLS = [
         "source_pool_type": "E_CharacterGachaPoolType_Beginner",
         "pool_id_fallback": "beginner",
         "six_star_limit": 80,
+        "five_star_limit": 10,
+    },
+    {
+        "title_key": "dashboard.pool.weapon",
+        "source_pool_type": "E_WeaponGachaPoolType_Weapon",
+        "pool_id_fallback": "weponbox",
+        "six_star_limit": 40,
         "five_star_limit": 10,
     },
 ]
@@ -155,6 +163,157 @@ CHARACTERS = [
     {"name": "Ивонна", "icon": "yvonne.png", "rarity": 6, "element": "cryo", "weapon": "guns", "role": "caster", "aliases": ["Yvonne"]},
 ]
 
+CHARACTER_OFFICIAL_NAMES = {
+    "akekuri.png": {"ru": "Акэкури", "en": "Akekuri", "de": "Akekuri", "zh-hans": "红栗", "ja": "アケクリ"},
+    "alesh.png": {"ru": "Алеш", "en": "Alesh", "de": "Alesh", "zh-hans": "阿列什", "ja": "アレッシュ"},
+    "antal.png": {"ru": "Антал", "en": "Antal", "de": "Antal", "zh-hans": "安塔尔", "ja": "アンタル"},
+    "arclight.png": {"ru": "Арклайт", "en": "Arclight", "de": "Arclight", "zh-hans": "弧光", "ja": "アークライト"},
+    "Ardelia.png": {"ru": "Арделия", "en": "Ardelia", "de": "Ardelia", "zh-hans": "艾尔黛拉", "ja": "アルデリア"},
+    "avywenna.png": {"ru": "Авивенна", "en": "Avywenna", "de": "Avywenna", "zh-hans": "艾维文娜", "ja": "アイヴィーエナ"},
+    "catcher.png": {"ru": "Кэтчер", "en": "Catcher", "de": "Catcher", "zh-hans": "卡契尔", "ja": "キャッチャー"},
+    "Chen-Qianyu.png": {"ru": "Чэнь Цяньюй", "en": "Chen Qianyu", "de": "Chen Qianyu", "zh-hans": "陈千语", "ja": "チェン・センユー"},
+    "da-pan.png": {"ru": "Да Пан", "en": "Da Pan", "de": "Da Pan", "zh-hans": "大潘", "ja": "ダパン"},
+    "ember.png": {"ru": "Эмбер", "en": "Ember", "de": "Ember", "zh-hans": "余烬", "ja": "エンバー"},
+    "Endministrator.png": {"ru": "Эндминистратор", "en": "Endministrator", "de": "Endministrator", "zh-hans": "管理员", "ja": "管理人"},
+    "estella.png": {"ru": "Эстелла", "en": "Estella", "de": "Estella", "zh-hans": "埃特拉", "ja": "エステーラ"},
+    "fluorite.png": {"ru": "Флюорит", "en": "Fluorite", "de": "Fluorite", "zh-hans": "萤石", "ja": "フローライト"},
+    "gilberta.png": {"ru": "Гилберта", "en": "Gilberta", "de": "Gilberta", "zh-hans": "洁尔佩塔", "ja": "ギルベルタ"},
+    "laevatain.png": {"ru": "Лэватейн", "en": "Laevatain", "de": "Laevatain", "zh-hans": "莱万汀", "ja": "レーヴァティン"},
+    "last-rite.png": {"ru": "Панихида", "en": "Last Rite", "de": "Last Rite", "zh-hans": "别礼", "ja": "ラストライト"},
+    "lifeng.png": {"ru": "Лифэн", "en": "Lifeng", "de": "Lifeng", "zh-hans": "黎风", "ja": "リーフォン"},
+    "perlica.png": {"ru": "Перлика", "en": "Perlica", "de": "Perlica", "zh-hans": "佩丽卡", "ja": "ペリカ"},
+    "pogranichnik.png": {"ru": "Пограничник", "en": "Pogranichnik", "de": "Pogranichnik", "zh-hans": "骏卫", "ja": "ポグラニチニク"},
+    "snowshine.png": {"ru": "Светоснежка", "en": "Snowshine", "de": "Snowshine", "zh-hans": "昼雪", "ja": "スノーシャイン"},
+    "wulfgard.png": {"ru": "Вулфгард", "en": "Wulfgard", "de": "Wulfgard", "zh-hans": "狼卫", "ja": "ウルフガード"},
+    "xaihi.png": {"ru": "Сайхи", "en": "Xaihi", "de": "Xaihi", "zh-hans": "赛希", "ja": "ザイヒ"},
+    "yvonne.png": {"ru": "Ивонна", "en": "Yvonne", "de": "Yvonne", "zh-hans": "伊冯", "ja": "イヴォンヌ"},
+}
+
+WEAPON_OFFICIAL_NAMES = {
+    "Джимини 12": {"ru": "Джимини 12", "en": "Jiminy 12", "de": "Jiminy 12", "zh-hans": "吉米尼12", "ja": "ジミニ12"},
+    "Оперо 77": {"ru": "Оперо 77", "en": "Opero 77", "de": "Opero 77", "zh-hans": "奥佩罗77", "ja": "オッペロ77"},
+    "Пеко 5": {"ru": "Пеко 5", "en": "Peco 5", "de": "Peco 5", "zh-hans": "佩科5", "ja": "ペッコ5"},
+    "Тарр 11": {"ru": "Тарр 11", "en": "Tarr 11", "de": "Tarr 11", "zh-hans": "塔尔11", "ja": "タール11"},
+    "Дархофф 7": {"ru": "Дархофф 7", "en": "Darhoff 7", "de": "Darhoff 7", "zh-hans": "达尔霍夫7", "ja": "ダルホフ7"},
+    "Гаситель": {"ru": "Гаситель", "en": "Quencher", "de": "Ausloscher", "zh-hans": "淬火者", "ja": "鍛冶師"},
+    "Гиперновая": {"ru": "Гиперновая", "en": "Hypernova Auto", "de": "Vollautomatische Hypernova", "zh-hans": "全自动焕新星", "ja": "オート・ハイパーノヴァ"},
+    "Долгий путь": {"ru": "Долгий путь", "en": "Long Road", "de": "Langer Weg", "zh-hans": "长路", "ja": "長路"},
+    "Индустрия 0.1": {"ru": "Индустрия 0.1", "en": "Industry 0.1", "de": "Industrie 0.1", "zh-hans": "工业零点一", "ja": "工業零点一"},
+    "Морской вал": {"ru": "Морской вал", "en": "Wave Tide", "de": "Flutwelle", "zh-hans": "浪潮", "ja": "潮流"},
+    "Ревущий страж": {"ru": "Ревущий страж", "en": "Howling Guard", "de": "Heulender Wachter", "zh-hans": "呼啸守卫", "ja": "ロアーガード"},
+    "Флуоресценция": {"ru": "Флуоресценция", "en": "Fluorescent Roc", "de": "Fluoreszierende Drohne", "zh-hans": "荧光雷羽", "ja": "蛍光雷羽"},
+    "Чрезвычайная мера": {"ru": "Чрезвычайная мера", "en": "Contingent Measure", "de": "Notfallmaßnahme", "zh-hans": "应急手段", "ja": "緊急設計"},
+    "Аггелоубийца": {"ru": "Аггелоубийца", "en": "Aggeloslayer", "de": "Aggelo-Bezwinger", "zh-hans": "天使杀手", "ja": "アンゲロス・スレイヤー"},
+    "OBJ Идентификатор": {"ru": "OBJ Идентификатор искусств", "en": "OBJ Arts Identifier", "de": "OBJ Techniken-Bestimmer", "zh-hans": "O.B.J.术识", "ja": "O.B.J.術識"},
+    "OBJ Клинок света": {"ru": "OBJ Клинок света", "en": "OBJ Edge of Lightness", "de": "OBJ Ende der Leichtigkeit", "zh-hans": "O.B.J.轻芒", "ja": "O.B.J.軽刃"},
+    "OBJ Прыть Иконка": {"ru": "OBJ Прыть", "en": "OBJ Velocitous", "de": "OBJ Windeseile", "zh-hans": "O.B.J.迅极", "ja": "O.B.J.迅速"},
+    "OBJ Рог-бритва": {"ru": "OBJ Рог-бритва", "en": "OBJ Razorhorn", "de": "OBJ Klingenhorn", "zh-hans": "O.B.J.尖峰", "ja": "O.B.J.鋭矛"},
+    "OBJ Тяжёлое бремя": {"ru": "OBJ Тяжёлое бремя", "en": "OBJ Heavy Burden", "de": "OBJ Schwere Last", "zh-hans": "O.B.J.重荷", "ja": "O.B.J.重責"},
+    "Водоплаволов 3.0": {"ru": "Водоплаволов 3.0", "en": "Finchaser 3.0", "de": "Flosslerjager 3.0", "zh-hans": "逐鳞3.0", "ja": "フィンチェイサー3.0"},
+    "Двенадцать вопросов": {"ru": "Двенадцать вопросов", "en": "Twelve Questions", "de": "Zwolf Fragen", "zh-hans": "十二问", "ja": "十二問"},
+    "Дикий странник": {"ru": "Дикий странник", "en": "Wild Wanderer", "de": "Wilder Wanderer", "zh-hans": "迷失荒野", "ja": "荒野迷走"},
+    "Древний канал": {"ru": "Древний канал", "en": "Ancient Canal", "de": "Uralter Kanal", "zh-hans": "古渠", "ja": "千古恒常"},
+    "Искатель тёмного луна": {"ru": "Искатель тёмного луна", "en": "Seeker of Dark Lung", "de": "Sucher der dunklen Lung", "zh-hans": "探颚", "ja": "探龍"},
+    "Монаихэ": {"ru": "Монаихэ", "en": "Monaihe", "de": "Monaihe", "zh-hans": "莫奈何", "ja": "衒無"},
+    "Опус живого": {"ru": "Опус живого", "en": "Opus: The Living", "de": "Opus: Die Lebenden", "zh-hans": "作品：众生", "ja": "作品：衆生"},
+    "Прощальный обет": {"ru": "Прощальный обет", "en": "Rational Farewell", "de": "Rationaler Abschied", "zh-hans": "理性告别", "ja": "合理的決別"},
+    "Свободное служение": {"ru": "Свободное служение", "en": "Freedom to Proselytize", "de": "Freiheit des Predigers", "zh-hans": "布道自由", "ja": "布教の自由"},
+    "Скала": {"ru": "Скала", "en": "Fortmaker", "de": "Fortbauer", "zh-hans": "坚城铸造者", "ja": "堅城錬造者"},
+    "Стальной раскол": {"ru": "Стальной раскол", "en": "Sundering Steel", "de": "ZerreiBender Stahl", "zh-hans": "钢铁余音", "ja": "鋼鉄余音"},
+    "Станс памяти": {"ru": "Станс памяти", "en": "Stanza of Memorials", "de": "Strophe der Erinnerungen", "zh-hans": "悼亡诗", "ja": "弔いの詩"},
+    "Устремление": {"ru": "Устремление", "en": "Aspirant", "de": "Aspirant", "zh-hans": "仰止", "ja": "仰止"},
+    "Финальный вызов": {"ru": "Финальный вызов", "en": "Finishing Call", "de": "Finaler Schrei", "zh-hans": "终点之声", "ja": "最期の声"},
+    "Химера правосудия": {"ru": "Химера правосудия", "en": "Chimeric Justice", "de": "Chimarische Gerechtigkeit", "zh-hans": "嵌合正义", "ja": "正義嵌合"},
+    "Артист Тиранический": {"ru": "Артист Тиранический", "en": "Artzy Tyrannical", "de": "Kunstlerischer Tyrann", "zh-hans": "艺术暴君", "ja": "芸術の独裁者"},
+    "Безупречная репутация": {"ru": "Безупречная репутация", "en": "Eminent Repute", "de": "Untadeliger Ruf", "zh-hans": "显赫声名", "ja": "輝かしき名声"},
+    "Былой шик": {"ru": "Былой шик", "en": "Former Finery", "de": "Ehemalige Eleganz", "zh-hans": "昔日精品", "ja": "昔日の逸品"},
+    "Великое видение": {"ru": "Великое видение", "en": "Grand Vision", "de": "GroBe Vision", "zh-hans": "宏愿", "ja": "大願"},
+    "Гарантированная доставка": {"ru": "Гарантированная доставка", "en": "Delivery Guaranteed", "de": "Garantierte Lieferung", "zh-hans": "使命必达", "ja": "使命必達"},
+    "Гнев кузни": {"ru": "Гнев кузни", "en": "Forgeborn Scathe", "de": "Tadel des Schmiedefeuers", "zh-hans": "熔铸火焰", "ja": "フレイムフォージ"},
+    "Громберг": {"ru": "Громберг", "en": "Thunderberge", "de": "Donnerberg", "zh-hans": "大雷斑", "ja": "大雷斑"},
+    "Доблесть": {"ru": "Доблесть", "en": "Valiant", "de": "Tapferkeit", "zh-hans": "骁勇", "ja": "勇猛"},
+    "Забвение": {"ru": "Забвение", "en": "Oblivion", "de": "Vergessenheit", "zh-hans": "遗忘", "ja": "遺忘"},
+    "Звезда белых ночей": {"ru": "Звезда белых ночей", "en": "White Night Nova", "de": "Polarnacht-Nova", "zh-hans": "白夜新星", "ja": "白夜新星"},
+    "Кланнибал": {"ru": "Кланнибал", "en": "Clannibal", "de": "Klannibale", "zh-hans": "同类相食", "ja": "同類共食"},
+    "Клин": {"ru": "Клин", "en": "Wedge", "de": "Keil", "zh-hans": "楔子", "ja": "楔"},
+    "Мечта о звёздном береге": {"ru": "Мечта о звёздном береге", "en": "Dreams of the Starry Beach", "de": "Traume vom Sternenstrand", "zh-hans": "沧泪星梦", "ja": "蒼星の囁き"},
+    "Модуль взрыва": {"ru": "Модуль взрыва", "en": "Detonation Unit", "de": "Zunder", "zh-hans": "爆破单元", "ja": "破壊ユニット"},
+    "Навигатор": {"ru": "Навигатор", "en": "Navigator", "de": "Navigator", "zh-hans": "领航者", "ja": "ナビゲーター"},
+    "Неустанность": {"ru": "Неустанность", "en": "Never Rest", "de": "Nimmerrast", "zh-hans": "不知归", "ja": "不知帰"},
+    "Ночной факел": {"ru": "Ночной факел", "en": "Umbral Torch", "de": "Schattenfackel", "zh-hans": "黯色火炬", "ja": "ダークトーチ"},
+    "Опус травления": {"ru": "Опус травления", "en": "Opus: Etch Figure", "de": "Opus: Atzfigur", "zh-hans": "作品：蚀迹", "ja": "作品・蝕跡"},
+    "Растерзанный принц": {"ru": "Растерзанный принц", "en": "Sundered Prince", "de": "Zerrutteter Prinz", "zh-hans": "破碎君王", "ja": "破砕君主"},
+    "Реактивная пика": {"ru": "Реактивная пика", "en": "JET", "de": "JET", "zh-hans": "J.E.T.", "ja": "J.E.T."},
+    "Резкий подъём": {"ru": "Резкий подъём", "en": "Rapid Ascent", "de": "Schneller Aufstieg", "zh-hans": "扶摇", "ja": "フーヤオ"},
+    "Рыцарская добродетель": {"ru": "Рыцарская добродетель", "en": "Chivalric Virtues", "de": "Ritterliche Tugenden", "zh-hans": "骑士精神", "ja": "騎士精神"},
+    "Термитный резак": {"ru": "Термитный резак", "en": "Thermite Cutter", "de": "Thermitschneider", "zh-hans": "热熔切割器", "ja": "テルミット・カッター"},
+    "Хравенгер": {"ru": "Хравенгер", "en": "Khravengger", "de": "Kravenier", "zh-hans": "赫拉芬格", "ja": "クラヴェンガー"},
+    "Хранитель Горы": {"ru": "Хранитель Горы", "en": "Mountain Bearer", "de": "Bergtrager", "zh-hans": "负山", "ja": "負山"},
+    "Эталон": {"ru": "Эталон", "en": "Exemplar", "de": "Mustermodell", "zh-hans": "典范", "ja": "鑑"},
+}
+
+
+def _character_official_name(character, language):
+    """Resolve localized official character name for supported interface languages."""
+    icon = str(character.get("icon") or "").strip()
+    names = CHARACTER_OFFICIAL_NAMES.get(icon, {})
+    normalized_language = normalize_language_code(language)
+    return names.get(normalized_language) or names.get("ru") or str(character.get("name") or "")
+
+
+def _character_all_aliases(character):
+    """Build all known aliases including official names for supported languages."""
+    values = [str(character.get("name") or "").strip()]
+    values.extend(str(alias or "").strip() for alias in (character.get("aliases") or []))
+
+    names = CHARACTER_OFFICIAL_NAMES.get(str(character.get("icon") or "").strip(), {})
+    values.extend(str(localized_name or "").strip() for localized_name in names.values())
+
+    unique = []
+    seen = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _weapon_localized_name(key, language):
+    """Resolve localized official weapon name by catalog key."""
+    names = WEAPON_OFFICIAL_NAMES.get(str(key or "").strip(), {})
+    normalized_language = normalize_language_code(language)
+    return names.get(normalized_language) or names.get("ru") or str(key or "")
+
+
+def _weapon_all_aliases(key):
+    """Build known aliases for weapon lookup from all supported language variants."""
+    raw_key = str(key or "").strip()
+    names = WEAPON_OFFICIAL_NAMES.get(raw_key, {})
+    values = [raw_key]
+    values.extend(str(localized_name or "").strip() for localized_name in names.values())
+    unique = []
+    seen = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _build_weapon_name_refs(language):
+    """Build lightweight weapon alias map for client-side name localization."""
+    refs = []
+    for key in WEAPON_OFFICIAL_NAMES.keys():
+        refs.append(
+            {
+                "name": _weapon_localized_name(key, language),
+                "aliases": _weapon_all_aliases(key),
+            }
+        )
+    return refs
+
 
 def _pity_counter_until_any(rarities, reset_values):
     """Count pulls since the latest target rarity in a reverse-sorted list."""
@@ -212,7 +371,7 @@ def _build_character_obtained_map(session):
 def _character_lookup_keys(character):
     """Build all lookup keys for a character definition."""
     keys = {_normalize_character_key(character.get("name"))}
-    for alias in character.get("aliases", []):
+    for alias in _character_all_aliases(character):
         keys.add(_normalize_character_key(alias))
     icon_stem = str(character.get("icon", "")).rsplit(".", 1)[0]
     keys.add(_normalize_character_key(icon_stem))
@@ -276,15 +435,38 @@ def _build_history_rows(pulls, language):
     return list(reversed(rows))
 
 
+def _build_dashboard_character_icon_refs(language):
+    """Build lightweight character alias map for dashboard icon/name resolution."""
+    refs = []
+    for character in CHARACTERS:
+        icon = str(character.get("icon") or "").strip()
+        if not icon:
+            continue
+        icon_stem = icon.rsplit(".", 1)[0]
+        keys = [icon_stem, *_character_all_aliases(character)]
+        localized_name = _character_official_name(character, language)
+        refs.append(
+            {
+                "icon": icon,
+                "name": localized_name,
+                "keys": [str(value).strip() for value in keys if str(value).strip()],
+            }
+        )
+    return refs
+
+
 def dashboard(request):
     """Render pity dashboard shell. Client computes personal data from local/cloud storage."""
     language = get_request_language(request)
     cards = []
 
     for spec in DASHBOARD_POOLS:
+        title = spec.get("title")
+        if not title and spec.get("title_key"):
+            title = _tr_lang(language, spec["title_key"])
         cards.append(
             {
-                "title": _tr_lang(language, spec["title_key"]),
+                "title": title or spec.get("source_pool_type") or "Banner",
                 "total": 0,
                 "six_star_pity": 0,
                 "six_star_left": spec["six_star_limit"],
@@ -304,6 +486,8 @@ def dashboard(request):
         {
             "cards": cards,
             "latest_session": None,
+            "character_icon_refs": _build_dashboard_character_icon_refs(language),
+            "weapon_name_refs": _build_weapon_name_refs(language),
         },
     )
 
@@ -316,6 +500,7 @@ def characters_page(request):
     first_hero_ts = None
     characters = []
     for character in CHARACTERS:
+        localized_name = _character_official_name(character, language)
         element_meta = CHARACTER_ELEMENTS.get(character["element"], {})
         weapon_meta = CHARACTER_WEAPONS.get(character["weapon"], {})
         role_meta = CHARACTER_ROLES.get(character["role"], {})
@@ -325,14 +510,16 @@ def characters_page(request):
         is_obtained = bool(matched_values)
         matched_ts = min((value for value in matched_values if value), default=matched_values[0] if matched_values else None)
 
-        # Endministrator is granted by default: show obtained status with first hero date.
-        if character.get("icon") == "Endministrator.png":
+        # Endministrator badge appears only when at least one pull exists in history.
+        if character.get("icon") == "Endministrator.png" and first_hero_ts:
             is_obtained = True
             matched_ts = first_hero_ts
 
         characters.append(
             {
                 **character,
+                "name": localized_name,
+                "aliases": _character_all_aliases(character),
                 "rarity_icon": RARITY_ICONS.get(rarity, ""),
                 "element_label": _tr_lang(language, element_meta.get("label_key", "")),
                 "element_icon": element_meta.get("icon", ""),
@@ -350,6 +537,48 @@ def characters_page(request):
         "core/characters.html",
         {
             "characters": characters,
+        },
+    )
+
+
+def _build_weapons_catalog(language):
+    """Build weapons catalog from static assets grouped by rarity folders."""
+    weapons_root = Path(settings.BASE_DIR) / "static" / "img" / "weapons"
+    if not weapons_root.exists():
+        return []
+
+    supported_ext = {".webp", ".png", ".jpg", ".jpeg", ".avif"}
+    weapons = []
+    for rarity_dir in weapons_root.iterdir():
+        if not rarity_dir.is_dir():
+            continue
+        rarity_name = str(rarity_dir.name).strip()
+        if not rarity_name.isdigit():
+            continue
+        rarity = int(rarity_name)
+        for icon_path in rarity_dir.iterdir():
+            if not icon_path.is_file() or icon_path.suffix.lower() not in supported_ext:
+                continue
+            weapons.append(
+                {
+                    "name": _weapon_localized_name(icon_path.stem, language),
+                    "icon": icon_path.name,
+                    "rarity": rarity,
+                }
+            )
+
+    weapons.sort(key=lambda value: (-int(value.get("rarity") or 0), str(value.get("name") or "").lower()))
+    return weapons
+
+
+def weapons_page(request):
+    """Render weapons catalog page built from local static icons."""
+    language = get_request_language(request)
+    return render(
+        request,
+        "core/weapons.html",
+        {
+            "weapons": _build_weapons_catalog(language),
         },
     )
 
@@ -1095,32 +1324,67 @@ def _latest_import_session():
 
 def _normalize_pull_item(item):
     """Normalize one pull record to canonical export format."""
+    pool_id = str(item.get("pool_id") or item.get("poolId") or "UNKNOWN")
+    source_pool_type = str(item.get("source_pool_type") or item.get("_source_pool_type") or "")
+    weapon_id = str(item.get("weapon_id") or item.get("weaponId") or "")
+    weapon_name = str(item.get("weapon_name") or item.get("weaponName") or "")
+    char_id = str(item.get("char_id") or item.get("charId") or weapon_id)
+    char_name = str(item.get("char_name") or item.get("charName") or weapon_name)
+
+    raw_item_type = str(item.get("item_type") or item.get("itemType") or "").strip().lower()
+    source_hint = source_pool_type.lower()
+    pool_hint = pool_id.lower()
+    inferred_item_type = raw_item_type
+    if inferred_item_type not in {"character", "weapon"}:
+        if weapon_id or weapon_name or "weapon" in source_hint or "wepon" in pool_hint or "weapon" in pool_hint:
+            inferred_item_type = "weapon"
+        else:
+            inferred_item_type = "character"
+
     return {
-        "pool_id": str(item.get("pool_id") or item.get("poolId") or "UNKNOWN"),
+        "pool_id": pool_id,
         "pool_name": str(item.get("pool_name") or item.get("poolName") or ""),
-        "char_id": str(item.get("char_id") or item.get("charId") or ""),
-        "char_name": str(item.get("char_name") or item.get("charName") or ""),
+        "char_id": char_id,
+        "char_name": char_name,
         "rarity": _to_int(item.get("rarity"), default=0),
         "is_free": _to_bool(item.get("is_free") if "is_free" in item else item.get("isFree")),
         "is_new": _to_bool(item.get("is_new") if "is_new" in item else item.get("isNew")),
         "gacha_ts": _to_int(item.get("gacha_ts") if "gacha_ts" in item else item.get("gachaTs"), default=0) or None,
         "seq_id": _to_int(item.get("seq_id") if "seq_id" in item else item.get("seqId"), default=0),
-        "source_pool_type": str(item.get("source_pool_type") or item.get("_source_pool_type") or ""),
+        "source_pool_type": source_pool_type,
+        "item_type": inferred_item_type,
+        "weapon_id": weapon_id,
+        "weapon_name": weapon_name,
     }
 
 
-def _extract_credentials_from_page_url(page_url: str):
-    """Parse token/server/lang query params from game history URL."""
+def _parse_page_url_details(page_url: str):
+    """Parse token/server/lang/import_kind/pool_id from game history URL."""
     if not page_url:
-        return "", "", "ru-ru"
+        return {
+            "token": "",
+            "server_id": "",
+            "lang": "ru-ru",
+            "import_kind": "character",
+            "pool_id": "",
+        }
 
     parsed = urlparse(page_url)
     query = parse_qs(parsed.query)
+    path = str(parsed.path or "").lower()
 
-    token = (query.get("u8_token") or query.get("token") or [""])[0]
-    server_id = (query.get("server") or query.get("server_id") or [""])[0]
-    lang = (query.get("lang") or ["ru-ru"])[0]
-    return token, server_id, lang
+    import_kind = "weapon" if "gacha_weapon" in path else "character"
+    token = str((query.get("u8_token") or query.get("token") or [""])[0] or "")
+    server_id = str((query.get("server") or query.get("server_id") or [""])[0] or "")
+    lang = str((query.get("lang") or ["ru-ru"])[0] or "ru-ru")
+    pool_id = str((query.get("pool_id") or [""])[0] or "")
+    return {
+        "token": token,
+        "server_id": server_id,
+        "lang": lang,
+        "import_kind": import_kind,
+        "pool_id": pool_id,
+    }
 
 
 def _run_import_session(session_id: int, ui_language: str):
@@ -1130,33 +1394,90 @@ def _run_import_session(session_id: int, ui_language: str):
         return
     _set_progress(session_id, status="running", progress=3, message=_tr_lang(ui_language, "import.loading.prepare"))
 
-    def on_pool_progress(index, total, pool_type, stage, **kwargs):
+    def resolve_pool_label(pool_type, **kwargs):
         pool_label_key = POOL_LABELS.get(pool_type)
-        pool_label = _tr_lang(ui_language, pool_label_key) if pool_label_key else pool_type
+        if pool_label_key:
+            return _tr_lang(ui_language, pool_label_key)
+        pool_label = str(kwargs.get("pool_name") or kwargs.get("pool_id") or pool_type or "").strip()
+        if pool_label:
+            return pool_label
+        if "weapon" in str(pool_type or "").lower():
+            return _tr_lang(ui_language, "dashboard.pool.weapon")
+        return _tr_lang(ui_language, "dashboard.pool.generic")
+
+    def on_character_pool_progress(index, total, pool_type, stage, **kwargs):
+        safe_total = max(int(total or 1), 1)
+        pool_label = resolve_pool_label(pool_type, **kwargs)
         if stage == "start":
-            progress = 5 + int(((index - 1) / total) * 70)
+            progress = 5 + int(((index - 1) / safe_total) * 55)
             message = f"{_tr_lang(ui_language, 'import.loading.hint1')} {pool_label}."
         else:
-            progress = 5 + int((index / total) * 70)
+            progress = 5 + int((index / safe_total) * 55)
+            message = _tr_lang(ui_language, "import.loading.hint2")
+        _set_progress(session_id, status="running", progress=progress, message=message)
+
+    def on_weapon_pool_progress(index, total, pool_type, stage, **kwargs):
+        safe_total = max(int(total or 1), 1)
+        pool_label = resolve_pool_label(pool_type, **kwargs)
+        if stage == "start":
+            progress = 65 + int(((index - 1) / safe_total) * 25)
+            message = f"{_tr_lang(ui_language, 'import.loading.hint1')} {pool_label}."
+        else:
+            progress = 65 + int((index / safe_total) * 25)
             message = _tr_lang(ui_language, "import.loading.hint2")
         _set_progress(session_id, status="running", progress=progress, message=message)
 
     try:
-        items = fetch_all_records(
-            token=str(session.get("token") or ""),
-            server_id=str(session.get("server_id") or ""),
-            lang=str(session.get("lang") or "ru-ru"),
-            on_pool_progress=on_pool_progress,
+        token = str(session.get("token") or "")
+        server_id = str(session.get("server_id") or "")
+        lang = str(session.get("lang") or "ru-ru")
+        selected_pool_id = str(session.get("selected_pool_id") or "")
+
+        # Import both sources in one pass: character + weapon.
+        character_items = fetch_all_records(
+            token=token,
+            server_id=server_id,
+            lang=lang,
+            import_kind="character",
+            on_pool_progress=on_character_pool_progress,
+        )
+        weapon_items = fetch_all_records(
+            token=token,
+            server_id=server_id,
+            lang=lang,
+            import_kind="weapon",
+            selected_pool_id=selected_pool_id,
+            on_pool_progress=on_weapon_pool_progress,
+        )
+        items = [*character_items, *weapon_items]
+
+        pulls = []
+        seen = set()
+        for item in items:
+            normalized = _normalize_pull_item(item)
+            seq_id = _to_int(normalized.get("seq_id"), default=0)
+            pool_id = str(normalized.get("pool_id") or "").strip()
+            dedupe_key = f"{pool_id}:{seq_id}" if pool_id and seq_id else ""
+            if dedupe_key and dedupe_key in seen:
+                continue
+            if dedupe_key:
+                seen.add(dedupe_key)
+            pulls.append(normalized)
+        pulls.sort(
+            key=lambda value: (
+                _to_int(value.get("gacha_ts"), default=0),
+                _to_int(value.get("seq_id"), default=0),
+            ),
+            reverse=True,
         )
 
         _set_progress(
             session_id,
             status="running",
-            progress=82,
+            progress=92,
             message=_tr_lang(ui_language, "import.loading.hint3"),
         )
 
-        pulls = [_normalize_pull_item(item) for item in items]
         total = len(pulls)
         if total:
             _set_progress(
@@ -1218,13 +1539,23 @@ def create_session(request):
     server_id = str(payload.get("server_id") or "").strip()
     page_url = (payload.get("page_url") or "").strip()
     lang = (payload.get("lang") or "ru-ru").strip()
+    import_kind = str(payload.get("import_kind") or "").strip().lower()
+    selected_pool_id = ""
+    parsed_url = _parse_page_url_details(page_url) if page_url else {}
+
+    if page_url:
+        if not import_kind:
+            import_kind = str(parsed_url.get("import_kind") or "character").strip().lower()
+        selected_pool_id = str(parsed_url.get("pool_id") or "").strip()
 
     if page_url and (not token or not server_id):
-        parsed_token, parsed_server, parsed_lang = _extract_credentials_from_page_url(page_url)
-        token = token or parsed_token
-        server_id = server_id or parsed_server
+        token = token or parsed_url.get("token", "")
+        server_id = server_id or parsed_url.get("server_id", "")
         if not payload.get("lang"):
-            lang = parsed_lang
+            lang = parsed_url.get("lang", "ru-ru")
+
+    if import_kind not in {"character", "weapon"}:
+        import_kind = "character"
 
     if not token or not server_id:
         return HttpResponseBadRequest("missing token/server_id")
@@ -1238,6 +1569,8 @@ def create_session(request):
         server_id=server_id,
         lang=lang,
         page_url=page_url,
+        import_kind=import_kind,
+        selected_pool_id=selected_pool_id,
         status="running",
         error="",
         pulls=[],

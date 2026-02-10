@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("language/set", views.set_site_language, name="set_site_language"),
     path("characters/", views.characters_page, name="characters_page"),
+    path("weapons/", views.weapons_page, name="weapons_page"),
     path("privacy/", views.privacy_policy, name="privacy_policy"),
     path("cookies/", views.cookies_policy, name="cookies_policy"),
     path("settings/", views.settings_page, name="settings_page"),

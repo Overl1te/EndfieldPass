@@ -21,12 +21,10 @@ SYNC_FILE_NAME = "history-latest.json"
 
 SYNC_PROVIDER_CHOICES = (
     ("google_drive", "Google Drive"),
-    ("yandex_disk", "Yandex Disk"),
 )
 
 CLOUD_PROVIDER_CHOICES = (
     ("google_drive", "Google Drive"),
-    ("yandex_disk", "Yandex Disk"),
     ("url", "Other (direct JSON URL)"),
 )
 

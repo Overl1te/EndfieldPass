@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% load static i18n_tags %}
+
+{% block title %}{% t "title.weapons" %} | EndfieldPass{% endblock %}
+
+{% block content %}
+<section class="weapons-page">
+    <header class="page-header">
+        <h1>{% t "weapons.title" %}</h1>
+        <span class="weapons-total">{% t "weapons.total" count=weapons|length %}</span>
+    </header>
+
+    {% if weapons %}
+    <section class="weapons-grid">
+        {% for weapon in weapons %}
+        <article class="weapon-card" data-weapon-card>
+            <div class="weapon-avatar weapon-rarity-{{ weapon.rarity }}">
+                <img
+                    src="{% static 'img/weapons/' %}{{ weapon.rarity }}/{{ weapon.icon }}"
+                    alt="{{ weapon.name }}"
+                    loading="lazy"
+                    onerror="this.hidden=true; this.parentElement.classList.add('fallback');"
+                >
+                <span class="weapon-fallback">{{ weapon.name|slice:":1" }}</span>
+            </div>
+            <h2>{{ weapon.name }}</h2>
+            <span class="weapon-meta">{% t "weapons.rarity" rarity=weapon.rarity %}</span>
+        </article>
+        {% endfor %}
+    </section>
+    {% else %}
+    <p class="weapons-empty">{% t "weapons.empty" %}</p>
+    {% endif %}
+</section>
+{% endblock %}

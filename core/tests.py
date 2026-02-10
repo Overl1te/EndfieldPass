@@ -98,6 +98,17 @@ class CharactersPageTests(TestCase):
         self.assertContains(response, "Получено ·")
 
 
+class WeaponsPageTests(TestCase):
+    def test_weapons_page_opens(self):
+        response = self.client.get(reverse("weapons_page"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_weapons_page_contains_weapon_cards(self):
+        response = self.client.get(reverse("weapons_page"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-weapon-card')
+
+
 class HistoryExportImportTests(TestCase):
     def test_export_history_returns_json_attachment(self):
         session = ImportSession.objects.create(

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static i18n_tags %}
 
 {% block title %}{% t "title.characters" %} | EndfieldPass{% endblock %}
@@ -10,8 +10,8 @@
             {% t "characters.title" %}
             <span
                 class="characters-title-help"
-                data-tooltip="Учитываются только выпавшие персонажи, полученные иным путем не считаются"
-                aria-label="Учитываются только выпавшие персонажи, полученные иным путем не считаются"
+                data-tooltip="{% t 'characters.title_help' %}"
+                aria-label="{% t 'characters.title_help' %}"
             >?</span>
         </h1>
     </header>
@@ -38,7 +38,7 @@
             </div>
 
             <div class="character-avatar">
-                <span class="character-potential" data-character-potential title="Потенциал">P0</span>
+                <span class="character-potential" data-character-potential title="{% t 'characters.potential' %}">P0</span>
                 <img
                     src="{% static 'img/characters/' %}{{ character.icon }}"
                     alt="{{ character.name }}"
@@ -109,11 +109,14 @@
 
     const renderCharacters = () => {
         const historyApi = window.endfieldPassHistory;
-        if (!historyApi || typeof historyApi.getLatestPulls !== "function") return;
-        const pulls = historyApi.getLatestPulls() || [];
+        if (!historyApi) return;
+        const pullGetter = typeof historyApi.getAllPulls === "function"
+            ? historyApi.getAllPulls
+            : historyApi.getLatestPulls;
+        if (typeof pullGetter !== "function") return;
+        const pulls = pullGetter() || [];
+        const hasAnyHistory = pulls.length > 0;
         const obtainedMap = buildObtainedMap(pulls);
-        const alwaysOwnedIcons = new Set(["Endministrator.png", "Chen-Qianyu.png", "perlica.png"]);
-        const forcedConstBonusIcons = new Set(["Chen-Qianyu.png", "perlica.png"]);
         const normalizedPullKeySets = pulls.map((pull) => new Set([
             normalize(pull.char_name),
             normalize(pull.char_id),
@@ -150,8 +153,7 @@
                     }
                 }
             });
-            const forcedBonus = forcedConstBonusIcons.has(iconName) ? 1 : 0;
-            const potential = Math.max(0, Math.min(5, (dropCount - 1) + forcedBonus));
+            const potential = Math.max(0, Math.min(5, dropCount - 1));
             if (potentialNode) {
                 potentialNode.textContent = `P${potential}`;
             }
@@ -167,9 +169,9 @@
                 if (matchedTs === null) matchedTs = obtainedMap.get(key);
             });
 
-            if (alwaysOwnedIcons.has(iconName)) {
+            if (hasAnyHistory && iconName === "Endministrator.png") {
                 hasMatch = true;
-                matchedTs = firstHeroTs;
+                matchedTs = matchedTs || firstHeroTs;
             }
 
             if (hasMatch) {
@@ -198,3 +200,4 @@
 })();
 </script>
 {% endblock %}
+

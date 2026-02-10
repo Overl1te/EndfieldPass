@@ -27,6 +27,7 @@
             <nav class="menu">
                 <a href="{% url 'dashboard' %}" class="menu-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">{% t "menu.home" %}</a>
                 <a href="{% url 'characters_page' %}" class="menu-item {% if request.resolver_match.url_name == 'characters_page' %}active{% endif %}">{% t "menu.characters" %}</a>
+                <a href="{% url 'weapons_page' %}" class="menu-item {% if request.resolver_match.url_name == 'weapons_page' %}active{% endif %}">{% t "menu.weapons" %}</a>
                 <a href="{% url 'import_page' %}" class="menu-item {% if request.resolver_match.url_name == 'import_page' or request.resolver_match.url_name == 'import_view' %}active{% endif %}">{% t "menu.import" %}</a>
                 <a href="{% url 'settings_page' %}" class="menu-item {% if request.resolver_match.url_name == 'settings_page' or request.resolver_match.url_name == 'import_history' or request.resolver_match.url_name == 'cloud_connect' or request.resolver_match.url_name == 'cloud_callback' or request.resolver_match.url_name == 'cloud_disconnect' or request.resolver_match.url_name == 'cloud_export' or request.resolver_match.url_name == 'cloud_import' %}active{% endif %}">{% t "menu.settings" %}</a>
             </nav>
@@ -61,6 +62,39 @@
             </footer>
         </main>
     </div>
+    <aside class="cookie-banner" id="cookieBanner" hidden>
+        <p class="cookie-banner-text">{% t "cookies.p1" %}</p>
+        <div class="cookie-banner-actions">
+            <a href="{% url 'cookies_policy' %}" class="btn btn-outline">{% t "footer.cookies" %}</a>
+            <button type="button" class="btn" id="cookieAcceptBtn">{% t "common.ok" %}</button>
+        </div>
+    </aside>
+    <script>
+    (() => {
+        const CONSENT_KEY = "endfieldpass:cookie_consent_v1";
+        const banner = document.getElementById("cookieBanner");
+        const acceptButton = document.getElementById("cookieAcceptBtn");
+        if (!banner || !acceptButton) return;
+
+        let hasConsent = false;
+        try {
+            hasConsent = Boolean(localStorage.getItem(CONSENT_KEY));
+        } catch (_) {
+            hasConsent = false;
+        }
+
+        if (!hasConsent) {
+            banner.hidden = false;
+        }
+
+        acceptButton.addEventListener("click", () => {
+            try {
+                localStorage.setItem(CONSENT_KEY, new Date().toISOString());
+            } catch (_) {}
+            banner.hidden = true;
+        });
+    })();
+    </script>
     <script>
     (() => {
         const HISTORY_KEY = "endfieldpass:history_payload_v1";
@@ -83,18 +117,113 @@
             return Boolean(value);
         };
 
-        const normalizePull = (item) => ({
-            pool_id: String(item?.pool_id ?? item?.poolId ?? "UNKNOWN"),
-            pool_name: String(item?.pool_name ?? item?.poolName ?? ""),
-            char_id: String(item?.char_id ?? item?.charId ?? ""),
-            char_name: String(item?.char_name ?? item?.charName ?? ""),
-            rarity: toInt(item?.rarity, 0),
-            is_free: toBool(item?.is_free ?? item?.isFree),
-            is_new: toBool(item?.is_new ?? item?.isNew),
-            gacha_ts: toInt(item?.gacha_ts ?? item?.gachaTs, 0) || null,
-            seq_id: toInt(item?.seq_id ?? item?.seqId, 0),
-            source_pool_type: String(item?.source_pool_type ?? item?._source_pool_type ?? ""),
-        });
+        const normalizeSeqId = (value) => String(value ?? "").trim();
+        const normalizePullKeyPart = (value) => String(value ?? "").trim().toLowerCase();
+
+        const toBigIntOrNull = (value) => {
+            const source = normalizeSeqId(value);
+            if (!source) return null;
+            try {
+                return BigInt(source);
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const comparePullsDesc = (left, right) => {
+            const tsDelta = (toInt(right?.gacha_ts, 0) - toInt(left?.gacha_ts, 0));
+            if (tsDelta !== 0) return tsDelta;
+
+            const leftSeqBig = toBigIntOrNull(left?.seq_id);
+            const rightSeqBig = toBigIntOrNull(right?.seq_id);
+            if (leftSeqBig !== null && rightSeqBig !== null && leftSeqBig !== rightSeqBig) {
+                return rightSeqBig > leftSeqBig ? 1 : -1;
+            }
+
+            const seqDelta = toInt(right?.seq_id, 0) - toInt(left?.seq_id, 0);
+            if (seqDelta !== 0) return seqDelta;
+
+            return String(right?.pool_id || "").localeCompare(String(left?.pool_id || ""));
+        };
+
+        const buildPullDedupeKey = (pull, fallbackIndex = 0) => {
+            const poolId = normalizePullKeyPart(pull?.pool_id);
+            const seqId = normalizeSeqId(pull?.seq_id);
+            if (poolId && seqId) {
+                return `seq:${poolId}:${seqId}`;
+            }
+
+            const timestamp = toInt(pull?.gacha_ts, 0);
+            const typeKey = normalizePullKeyPart(pull?.item_type);
+            const unitKey =
+                normalizePullKeyPart(pull?.weapon_id)
+                || normalizePullKeyPart(pull?.char_id)
+                || normalizePullKeyPart(pull?.char_name)
+                || "unit";
+            // Keep fallback records unique per payload order to avoid collapsing duplicate pulls.
+            return `fallback:${poolId}:${timestamp}:${typeKey}:${unitKey}:idx-${fallbackIndex}`;
+        };
+
+        const mergePullRecords = (current, incoming) => {
+            if (!current) return incoming;
+            const merged = { ...current };
+            const preferIncoming = (field) => {
+                if (!String(merged[field] ?? "").trim() && String(incoming[field] ?? "").trim()) {
+                    merged[field] = incoming[field];
+                }
+            };
+            preferIncoming("pool_name");
+            preferIncoming("char_id");
+            preferIncoming("char_name");
+            preferIncoming("source_pool_type");
+            preferIncoming("item_type");
+            preferIncoming("weapon_id");
+            preferIncoming("weapon_name");
+
+            if (!toInt(merged.gacha_ts, 0) && toInt(incoming.gacha_ts, 0)) {
+                merged.gacha_ts = incoming.gacha_ts;
+            }
+            if (!normalizeSeqId(merged.seq_id) && normalizeSeqId(incoming.seq_id)) {
+                merged.seq_id = incoming.seq_id;
+            }
+            if (!toInt(merged.rarity, 0) && toInt(incoming.rarity, 0)) {
+                merged.rarity = incoming.rarity;
+            }
+            return merged;
+        };
+
+        const inferItemType = (item, sourcePoolType, poolId, weaponId, weaponName) => {
+            const explicit = String(item?.item_type ?? item?.itemType ?? "").trim().toLowerCase();
+            if (explicit === "weapon" || explicit === "character") return explicit;
+            const sourceHint = String(sourcePoolType || "").trim().toLowerCase();
+            const poolHint = String(poolId || "").trim().toLowerCase();
+            if (weaponId || weaponName) return "weapon";
+            if (sourceHint.includes("weapon")) return "weapon";
+            if (poolHint.includes("weapon") || poolHint.includes("weponbox")) return "weapon";
+            return "character";
+        };
+
+        const normalizePull = (item) => {
+            const poolId = String(item?.pool_id ?? item?.poolId ?? "UNKNOWN");
+            const sourcePoolType = String(item?.source_pool_type ?? item?._source_pool_type ?? "");
+            const weaponId = String(item?.weapon_id ?? item?.weaponId ?? "");
+            const weaponName = String(item?.weapon_name ?? item?.weaponName ?? "");
+            return {
+                pool_id: poolId,
+                pool_name: String(item?.pool_name ?? item?.poolName ?? ""),
+                char_id: String(item?.char_id ?? item?.charId ?? weaponId),
+                char_name: String(item?.char_name ?? item?.charName ?? weaponName),
+                rarity: toInt(item?.rarity, 0),
+                is_free: toBool(item?.is_free ?? item?.isFree),
+                is_new: toBool(item?.is_new ?? item?.isNew),
+                gacha_ts: toInt(item?.gacha_ts ?? item?.gachaTs, 0) || null,
+                seq_id: normalizeSeqId(item?.seq_id ?? item?.seqId),
+                source_pool_type: sourcePoolType,
+                item_type: inferItemType(item, sourcePoolType, poolId, weaponId, weaponName),
+                weapon_id: weaponId,
+                weapon_name: weaponName,
+            };
+        };
 
         const normalizeSession = (session, fallbackIndex = 0) => {
             const rawPulls = Array.isArray(session?.pulls)
@@ -103,15 +232,10 @@
             const dedupe = new Map();
             rawPulls.forEach((item, index) => {
                 const normalized = normalizePull(item);
-                const key = [
-                    normalized.seq_id || `idx-${index}`,
-                    normalized.pool_id,
-                    normalized.gacha_ts || "",
-                    normalized.char_id || normalized.char_name || "",
-                ].join(":");
-                if (!dedupe.has(key)) dedupe.set(key, normalized);
+                const key = buildPullDedupeKey(normalized, index);
+                dedupe.set(key, mergePullRecords(dedupe.get(key), normalized));
             });
-            const pulls = Array.from(dedupe.values()).sort((a, b) => b.seq_id - a.seq_id);
+            const pulls = Array.from(dedupe.values()).sort(comparePullsDesc);
 
             return {
                 source_session_id: String(session?.source_session_id ?? session?.id ?? `local-${Date.now()}-${fallbackIndex}`),
@@ -192,6 +316,23 @@
         const getLatestPulls = (payload = null) => {
             const session = getLatestSession(payload);
             return Array.isArray(session?.pulls) ? session.pulls : [];
+        };
+
+        const getAllPulls = (payload = null) => {
+            const current = payload || readPayload();
+            if (!current || !Array.isArray(current.sessions) || !current.sessions.length) return [];
+
+            const dedupe = new Map();
+            current.sessions.forEach((session) => {
+                const pulls = Array.isArray(session?.pulls) ? session.pulls : [];
+                pulls.forEach((pull, index) => {
+                    const normalized = normalizePull(pull);
+                    const key = buildPullDedupeKey(normalized, index);
+                    dedupe.set(key, mergePullRecords(dedupe.get(key), normalized));
+                });
+            });
+
+            return Array.from(dedupe.values()).sort(comparePullsDesc);
         };
 
         const upsertImportedSession = ({ server_id = "3", lang = "ru-ru", page_url = "", pulls = [] } = {}) => {
@@ -340,6 +481,7 @@
             normalizePayload,
             normalizeSession,
             normalizePull,
+            getAllPulls,
             getLatestSession,
             getLatestPulls,
             upsertImportedSession,

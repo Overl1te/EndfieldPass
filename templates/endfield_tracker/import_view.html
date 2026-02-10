@@ -44,11 +44,11 @@
 
             <div class="form-grid mode-panel" data-mode-panel="manual" hidden>
                 <div>
-                    <label for="token">Token (u8_token)</label>
+                    <label for="token">{% t "import.manual.token" %}</label>
                     <input id="token" name="token" type="text" value="{{ form.token }}" placeholder="{% t 'import.token.placeholder' %}">
                 </div>
                 <div>
-                    <label for="server_id">Server ID</label>
+                    <label for="server_id">{% t "import.manual.server_id" %}</label>
                     <select id="server_id" name="server_id">
                         <option value="1" {% if form.server_id == "1" %}selected{% endif %}>1</option>
                         <option value="2" {% if form.server_id == "2" %}selected{% endif %}>2</option>
@@ -57,7 +57,7 @@
                     </select>
                 </div>
                 <div>
-                    <label for="lang">Language</label>
+                    <label for="lang">{% t "import.manual.language" %}</label>
                     <select id="lang" name="lang">
                         <option value="ru-ru" {% if form.lang == "ru-ru" %}selected{% endif %}>ru-ru</option>
                         <option value="en-us" {% if form.lang == "en-us" %}selected{% endif %}>en-us</option>
@@ -74,8 +74,9 @@
         <h3>{% t "import.guide.title" %}</h3>
         <div class="platform-switch" role="tablist" aria-label="{% t 'import.platform.aria' %}">
             <button type="button" class="platform-btn active" data-platform-btn="windows" aria-selected="true">{% t "import.platform.windows" %}</button>
-            <button type="button" class="platform-btn" data-platform-btn="android" aria-selected="false">Android</button>
-            <button type="button" class="platform-btn" data-platform-btn="ios" aria-selected="false">iOS</button>
+            <button type="button" class="platform-btn" data-platform-btn="linux" aria-selected="false">{% t "import.platform.linux" %}</button>
+            <button type="button" class="platform-btn" data-platform-btn="android" aria-selected="false">{% t "import.platform.android" %} <span class="platform-beta-badge">{% t "import.platform.beta" %}</span></button>
+            <button type="button" class="platform-btn" data-platform-btn="ios" aria-selected="false">{% t "import.platform.ios" %} <span class="platform-beta-badge">{% t "import.platform.beta" %}</span></button>
         </div>
 
         <div class="platform-panel" data-platform-panel="windows">
@@ -89,7 +90,26 @@
             <div class="import-script-wrap">
                 <pre class="import-script"><code id="powershellScript">iwr https://endfieldpass.site/scripts/endfieldpass.ps1 -UseBasicParsing -OutFile $env:TEMP\endfieldpass.ps1; & powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endfieldpass.ps1
 </code></pre>
-                <button type="button" class="btn btn-outline script-copy-btn" id="copyScriptButton">{% t "import.copy" %}</button>
+                <button type="button" class="btn btn-outline script-copy-btn" data-copy-script-btn data-copy-script-target="powershellScript">{% t "import.copy" %}</button>
+            </div>
+            <ol start="6">
+                <li>{% t "import.platform.step6" %}</li>
+                <li>{% t "import.platform.step7" %}</li>
+            </ol>
+        </div>
+
+        <div class="platform-panel" data-platform-panel="linux" hidden>
+            <ol>
+                <li>{% t "import.platform.step1" %}</li>
+                <li>{% t "import.platform.linux.step2" %}</li>
+                <li>{% t "import.platform.step3" %}</li>
+                <li>{% t "import.platform.linux.step4" %}</li>
+                <li>{% t "import.platform.linux.step5" %}</li>
+            </ol>
+            <div class="import-script-wrap">
+                <pre class="import-script"><code id="linuxScript">curl -fsSL https://endfieldpass.site/scripts/endfieldpass.sh -o "${TMPDIR:-/tmp}/endfieldpass.sh" && chmod +x "${TMPDIR:-/tmp}/endfieldpass.sh" && "${TMPDIR:-/tmp}/endfieldpass.sh"
+</code></pre>
+                <button type="button" class="btn btn-outline script-copy-btn" data-copy-script-btn data-copy-script-target="linuxScript">{% t "import.copy" %}</button>
             </div>
             <ol start="6">
                 <li>{% t "import.platform.step6" %}</li>
@@ -98,17 +118,24 @@
         </div>
 
         <div class="platform-panel" data-platform-panel="android" hidden>
-            <div class="platform-unavailable">
-                <strong>{% t "import.android_soon" %}</strong>
-                <p>{% t "import.platform.soon_desc" platform="Android" %}</p>
-            </div>
+            <ol>
+                <li>{% t "import.platform.android.step1" %}</li>
+                <li>{% t "import.platform.android.step2" %}</li>
+                <li>{% t "import.platform.android.step3" %}</li>
+                <li>{% t "import.platform.android.step4" %}</li>
+                <li>{% t "import.platform.android.step5" %}</li>
+            </ol>
         </div>
 
         <div class="platform-panel" data-platform-panel="ios" hidden>
-            <div class="platform-unavailable">
-                <strong>{% t "import.ios_soon" %}</strong>
-                <p>{% t "import.platform.soon_desc" platform="iOS" %}</p>
-            </div>
+            <ol>
+                <li>{% t "import.platform.ios.step1" %}</li>
+                <li>{% t "import.platform.ios.step2" %}</li>
+                <li>{% t "import.platform.ios.step3" %}</li>
+                <li>{% t "import.platform.ios.step4" %}</li>
+                <li>{% t "import.platform.ios.step5" %}</li>
+                <li>{% t "import.platform.ios.step6" %}</li>
+            </ol>
         </div>
     </section>
 
@@ -125,13 +152,13 @@
             <table>
                 <thead>
                     <tr>
-                        <th>seq</th>
-                        <th>pool</th>
-                        <th>rarity</th>
-                        <th>name</th>
-                        <th>free</th>
-                        <th>new</th>
-                        <th>ts</th>
+                        <th>{% t "import.result.table.seq" %}</th>
+                        <th>{% t "import.result.table.pool" %}</th>
+                        <th>{% t "import.result.table.rarity" %}</th>
+                        <th>{% t "import.result.table.name" %}</th>
+                        <th>{% t "import.result.table.free" %}</th>
+                        <th>{% t "import.result.table.new" %}</th>
+                        <th>{% t "import.result.table.ts" %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -180,6 +207,14 @@
         loadingHint2: "{% t 'import.loading.hint2' %}",
         loadingHint3: "{% t 'import.loading.hint3' %}",
         loadingHint4: "{% t 'import.loading.hint4' %}",
+        loadingHint5: "{% t 'import.loading.hint5' %}",
+        loadingHint6: "{% t 'import.loading.hint6' %}",
+        loadingHint7: "{% t 'import.loading.hint7' %}",
+        loadingHint8: "{% t 'import.loading.hint8' %}",
+        loadingHint9: "{% t 'import.loading.hint9' %}",
+        loadingHint10: "{% t 'import.loading.hint10' %}",
+        loadingHint11: "{% t 'import.loading.hint11' %}",
+        loadingHint12: "{% t 'import.loading.hint12' %}",
         errorTitle: "{% t 'import.error.title' %}",
         errorDefault: "{% t 'import.error.default' %}",
         errorRetry: "{% t 'import.error.retry' %}",
@@ -205,6 +240,14 @@
         i18n.loadingHint2,
         i18n.loadingHint3,
         i18n.loadingHint4,
+        i18n.loadingHint5,
+        i18n.loadingHint6,
+        i18n.loadingHint7,
+        i18n.loadingHint8,
+        i18n.loadingHint9,
+        i18n.loadingHint10,
+        i18n.loadingHint11,
+        i18n.loadingHint12,
     ];
 
     const createSessionUrl = page.dataset.createSessionUrl;
@@ -226,8 +269,7 @@
     const modePanels = document.querySelectorAll("[data-mode-panel]");
     const platformButtons = document.querySelectorAll("[data-platform-btn]");
     const platformPanels = document.querySelectorAll("[data-platform-panel]");
-    const copyScriptButton = document.getElementById("copyScriptButton");
-    const powershellScript = document.getElementById("powershellScript");
+    const copyScriptButtons = document.querySelectorAll("[data-copy-script-btn]");
 
     const pageUrlInput = document.getElementById("page_url");
     const tokenInput = document.getElementById("token");
@@ -278,12 +320,28 @@
         importError.innerHTML = "";
     };
 
+    const pickRandomHint = (previousHint = "") => {
+        const pool = loadingHints.filter((hint) => String(hint || "").trim());
+        if (!pool.length) return "";
+        if (pool.length === 1) return pool[0];
+
+        let candidate = pool[Math.floor(Math.random() * pool.length)];
+        if (candidate === previousHint) {
+            const alternatives = pool.filter((hint) => hint !== previousHint);
+            candidate = alternatives[Math.floor(Math.random() * alternatives.length)] || candidate;
+        }
+        return candidate;
+    };
+
     const runHintTicker = () => {
-        let idx = 0;
-        loadingHint.textContent = loadingHints[idx];
+        stopHintTicker();
+        let currentHint = pickRandomHint("");
+        if (currentHint) loadingHint.textContent = currentHint;
+
+        if (loadingHints.length < 2) return;
         hintInterval = setInterval(() => {
-            idx = (idx + 1) % loadingHints.length;
-            loadingHint.textContent = loadingHints[idx];
+            currentHint = pickRandomHint(currentHint);
+            if (currentHint) loadingHint.textContent = currentHint;
         }, 4500);
     };
 
@@ -295,12 +353,15 @@
     };
 
     const setLoadingState = (isLoading) => {
+        const isManualMode = importModeInput.value === "manual";
         loadingModal.hidden = !isLoading;
         submitButton.disabled = isLoading;
         pageUrlInput.readOnly = isLoading;
         tokenInput.readOnly = isLoading;
-        serverSelect.disabled = isLoading;
-        langSelect.disabled = isLoading;
+        pageUrlInput.disabled = isLoading || isManualMode;
+        tokenInput.disabled = isLoading || !isManualMode;
+        serverSelect.disabled = isLoading || !isManualMode;
+        langSelect.disabled = isLoading || !isManualMode;
         document.body.classList.toggle("modal-open", isLoading);
 
         if (!isLoading) {
@@ -322,6 +383,12 @@
         modePanels.forEach((panel) => {
             panel.hidden = panel.dataset.modePanel !== mode;
         });
+
+        const isManual = mode === "manual";
+        pageUrlInput.disabled = isManual;
+        tokenInput.disabled = !isManual;
+        serverSelect.disabled = !isManual;
+        langSelect.disabled = !isManual;
     };
 
     const applyPlatform = (platform) => {
@@ -333,6 +400,28 @@
         platformPanels.forEach((panel) => {
             panel.hidden = panel.dataset.platformPanel !== platform;
         });
+    };
+
+    const detectPlatformFromSystem = () => {
+        const nav = window.navigator || {};
+        const uaDataPlatform = String(nav.userAgentData?.platform || "").toLowerCase();
+        const platform = String(nav.platform || "").toLowerCase();
+        const userAgent = String(nav.userAgent || "").toLowerCase();
+        const maxTouchPoints = Number(nav.maxTouchPoints || 0);
+
+        const source = `${uaDataPlatform} ${platform} ${userAgent}`;
+        const isAndroid = source.includes("android");
+        const isIphone = source.includes("iphone");
+        const isIpad = source.includes("ipad") || (platform.includes("mac") && maxTouchPoints > 1);
+        const isIos = isIphone || isIpad;
+        const isWindows = source.includes("win");
+        const isLinux = source.includes("linux") && !isAndroid;
+
+        if (isAndroid) return "android";
+        if (isIos) return "ios";
+        if (isLinux) return "linux";
+        if (isWindows) return "windows";
+        return "windows";
     };
 
     const clearFieldErrors = () => {
@@ -408,7 +497,7 @@
             if (data.mode === "manual" || data.mode === "auto") {
                 applyMode(data.mode);
             }
-            if (data.platform === "windows" || data.platform === "android" || data.platform === "ios") {
+            if (data.platform === "windows" || data.platform === "linux" || data.platform === "android" || data.platform === "ios") {
                 applyPlatform(data.platform);
             }
             if (!tokenInput.value && data.token) tokenInput.value = data.token;
@@ -466,19 +555,21 @@
         }
     };
 
-    const copyScriptToClipboard = async () => {
-        const text = powershellScript.textContent || "";
+    const copyScriptToClipboard = async (button) => {
+        const targetId = String(button?.dataset.copyScriptTarget || "");
+        const sourceNode = targetId ? document.getElementById(targetId) : null;
+        const text = sourceNode ? (sourceNode.textContent || "") : "";
         if (!text) return;
         try {
             await navigator.clipboard.writeText(text);
-            copyScriptButton.textContent = i18n.copied;
+            button.textContent = i18n.copied;
             setTimeout(() => {
-                copyScriptButton.textContent = i18n.copy;
+                button.textContent = i18n.copy;
             }, 1400);
         } catch (_) {
-            copyScriptButton.textContent = i18n.copyError;
+            button.textContent = i18n.copyError;
             setTimeout(() => {
-                copyScriptButton.textContent = i18n.copy;
+                button.textContent = i18n.copy;
             }, 1400);
         }
     };
@@ -561,9 +652,11 @@
         });
     });
 
-    if (copyScriptButton && powershellScript) {
-        copyScriptButton.addEventListener("click", copyScriptToClipboard);
-    }
+    copyScriptButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            copyScriptToClipboard(button);
+        });
+    });
 
     [pageUrlInput, tokenInput, serverSelect, langSelect].forEach((field) => {
         field.addEventListener("change", saveFormState);
@@ -572,8 +665,9 @@
     });
 
     applyMode("auto");
-    applyPlatform("windows");
+    applyPlatform(detectPlatformFromSystem());
     restoreFormState();
+    applyPlatform(detectPlatformFromSystem());
     if (!currentSessionId) {
         pageUrlInput.value = "";
     }
