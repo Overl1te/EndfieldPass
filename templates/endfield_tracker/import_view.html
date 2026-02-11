@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load i18n_tags %}
+{% load i18n_tags static %}
 
 {% block title %}{% t "title.import" %} | EndfieldPass{% endblock %}
 
@@ -12,6 +12,7 @@
     data-view-template="{% url 'import_view' 0 %}"
     data-pulls-template="{% url 'pulls_json' 0 %}"
     data-current-session-id="{% if session %}{{ session.id }}{% endif %}"
+    data-turnstile-enabled="{% if turnstile_enabled %}true{% else %}false{% endif %}"
 >
     <header class="import-header">
         <h1>{% t "import.title" %}</h1>
@@ -65,6 +66,18 @@
                     </select>
                 </div>
             </div>
+
+            {% if turnstile_enabled and turnstile_site_key %}
+            <div class="turnstile-wrap">
+                <div
+                    class="cf-turnstile"
+                    id="turnstileWidget"
+                    data-sitekey="{{ turnstile_site_key }}"
+                    data-theme="dark"
+                    data-size="flexible"
+                ></div>
+            </div>
+            {% endif %}
 
             <button type="submit" class="btn import-submit" id="importSubmit">{% t "import.run" %}</button>
         </form>
@@ -187,14 +200,40 @@
 <div class="loading-modal" id="loadingModal" hidden>
     <div class="import-loading loading-modal-card">
         <div class="loading-gear" aria-hidden="true"></div>
+        <div class="loading-top-media-wrap" id="loadingTopMediaWrap" aria-hidden="true">
+            <div class="loading-top-media">
+                <video
+                    class="loading-top-video"
+                    autoplay
+                    loop
+                    muted
+                    playsinline
+                    preload="auto"
+                    onerror="this.hidden=true; this.nextElementSibling.hidden=false;"
+                >
+                    <source src="{% static 'gif/endmin_moving.webm' %}" type="video/webm">
+                </video>
+                <img
+                    class="loading-top-fallback"
+                    src="{% static 'img/logo.png' %}"
+                    alt=""
+                    loading="eager"
+                    hidden
+                >
+            </div>
+        </div>
         <p class="loading-message" id="loadingMessage">{% t "import.loading.prepare" %}</p>
         <p class="loading-hint" id="loadingHint">{% t "import.loading.hint1" %}</p>
-        <div class="loading-progress-track" aria-hidden="true">
+        <div class="loading-progress-track" id="loadingProgressTrack" aria-hidden="true">
             <div class="loading-progress-value" id="loadingProgress"></div>
         </div>
         <p class="loading-percent" id="loadingPercent">0%</p>
     </div>
 </div>
+
+{% if turnstile_enabled and turnstile_site_key %}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{% endif %}
 
 <script>
 (() => {
@@ -229,6 +268,9 @@
         errorImportFailed: "{% t 'import.error.import_failed' %}",
         errorInvalidSession: "{% t 'import.error.invalid_session' %}",
         errorHeader: "{% t 'import.error.header' %}",
+        errorTurnstileRequired: "Подтвердите проверку безопасности.",
+        errorTurnstileFailed: "Проверка безопасности не пройдена. Попробуйте еще раз.",
+        errorTurnstileUnavailable: "Cloudflare Turnstile недоступен в этой сети. Для локалки временно выключите TURNSTILE_ENABLED или используйте test keys.",
         copied: "{% t 'import.copied' %}",
         copy: "{% t 'import.copy' %}",
         copyError: "{% t 'import.copy_error' %}",
@@ -255,6 +297,7 @@
     const viewTemplate = page.dataset.viewTemplate;
     const pullsTemplate = page.dataset.pullsTemplate;
     const currentSessionId = page.dataset.currentSessionId;
+    const turnstileEnabled = String(page.dataset.turnstileEnabled || "").trim().toLowerCase() === "true";
 
     const form = document.getElementById("importForm");
     const submitButton = document.getElementById("importSubmit");
@@ -263,7 +306,12 @@
     const loadingMessage = document.getElementById("loadingMessage");
     const loadingHint = document.getElementById("loadingHint");
     const loadingProgress = document.getElementById("loadingProgress");
+    const loadingProgressTrack = document.getElementById("loadingProgressTrack");
     const loadingPercent = document.getElementById("loadingPercent");
+    const loadingTopMediaWrap = document.getElementById("loadingTopMediaWrap");
+    const loadingCard = loadingModal ? loadingModal.querySelector(".import-loading") : null;
+    const loadingTopVideo = loadingModal ? loadingModal.querySelector(".loading-top-video") : null;
+    const loadingTopFallback = loadingModal ? loadingModal.querySelector(".loading-top-fallback") : null;
     const importModeInput = document.getElementById("import_mode");
     const modeButtons = document.querySelectorAll("[data-import-mode]");
     const modePanels = document.querySelectorAll("[data-mode-panel]");
@@ -275,35 +323,184 @@
     const tokenInput = document.getElementById("token");
     const serverSelect = document.getElementById("server_id");
     const langSelect = document.getElementById("lang");
+    const turnstileWidget = document.getElementById("turnstileWidget");
 
     let displayedProgress = 0;
     let targetProgress = 0;
+    let actualProgress = 0;
     let progressAnimationFrame = null;
+    let progressLastTimestamp = 0;
+    let progressLoopActive = false;
+    let lastServerProgressAt = 0;
     let hintInterval = null;
+    let videoWatchdogInterval = null;
+    let lastVideoTime = -1;
+    let stalledVideoTicks = 0;
+    const PROGRESS_EPSILON = 0.05;
+    const PROGRESS_MIN_SPEED = 8;
+    const PROGRESS_MAX_SPEED = 34;
 
     const buildSessionUrl = (template, sessionId) => template.replace("/0/", `/${sessionId}/`);
 
-    const animateProgress = () => {
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const nowMs = () => (window.performance && typeof window.performance.now === "function" ? window.performance.now() : Date.now());
+
+    const fakeAheadLimit = (progress) => {
+        if (progress >= 98) return 0.8;
+        if (progress >= 90) return 1.8;
+        if (progress >= 75) return 3.2;
+        if (progress >= 55) return 4.8;
+        if (progress >= 30) return 6.0;
+        return 7.2;
+    };
+
+    const fakeRatePerSecond = (progress) => {
+        if (progress >= 98) return 0.12;
+        if (progress >= 90) return 0.25;
+        if (progress >= 75) return 0.45;
+        if (progress >= 55) return 0.65;
+        if (progress >= 30) return 0.85;
+        return 1.05;
+    };
+
+    const refreshVisualTarget = (timestamp) => {
+        if (actualProgress >= 100) {
+            targetProgress = 100;
+            return;
+        }
+        if (!lastServerProgressAt) {
+            lastServerProgressAt = timestamp || nowMs();
+        }
+
+        const elapsedSeconds = Math.max(0, ((timestamp || nowMs()) - lastServerProgressAt) / 1000);
+        const previewIncrement = Math.min(fakeAheadLimit(actualProgress), elapsedSeconds * fakeRatePerSecond(actualProgress));
+        const previewTarget = Math.min(99.4, actualProgress + previewIncrement);
+        targetProgress = Math.max(targetProgress, Math.max(actualProgress, previewTarget));
+    };
+
+    const updateTopMediaPosition = (progressValue = 0) => {
+        if (!loadingTopMediaWrap || !loadingProgressTrack || !loadingCard) return;
+
+        const trackRect = loadingProgressTrack.getBoundingClientRect();
+        const cardRect = loadingCard.getBoundingClientRect();
+        if (trackRect.width <= 0 || cardRect.width <= 0) return;
+
+        const mediaWidth = loadingTopMediaWrap.offsetWidth || 0;
+        const mediaHeight = loadingTopMediaWrap.offsetHeight || 0;
+
+        const trackStartX = trackRect.left - cardRect.left;
+        const rightEdgeX = trackStartX + trackRect.width;
+        const left = clamp(rightEdgeX - mediaWidth + 62, 0, Math.max(0, cardRect.width - mediaWidth));
+        const top = trackRect.top - cardRect.top - mediaHeight + 2;
+
+        loadingTopMediaWrap.style.left = `${left}px`;
+        loadingTopMediaWrap.style.top = `${Math.max(0, top)}px`;
+    };
+
+    const kickVideoPlayback = (hardReset = false) => {
+        if (!loadingTopVideo) return;
+
+        if (loadingTopFallback) loadingTopFallback.hidden = true;
+        loadingTopVideo.hidden = false;
+
+        if (hardReset) {
+            try {
+                loadingTopVideo.load();
+            } catch (_) {}
+        }
+
+        const playPromise = loadingTopVideo.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch(() => {
+                if (loadingTopFallback) loadingTopFallback.hidden = false;
+                loadingTopVideo.hidden = true;
+            });
+        }
+    };
+
+    const stopVideoWatchdog = () => {
+        if (videoWatchdogInterval) {
+            clearInterval(videoWatchdogInterval);
+            videoWatchdogInterval = null;
+        }
+        lastVideoTime = -1;
+        stalledVideoTicks = 0;
+    };
+
+    const startVideoWatchdog = () => {
+        if (!loadingTopVideo) return;
+        stopVideoWatchdog();
+
+        kickVideoPlayback(false);
+        videoWatchdogInterval = setInterval(() => {
+            if (loadingModal.hidden) return;
+            if (document.hidden) return;
+
+            if (loadingTopVideo.readyState < 2) {
+                kickVideoPlayback(true);
+                return;
+            }
+
+            const currentTime = Number(loadingTopVideo.currentTime || 0);
+            if (lastVideoTime >= 0 && currentTime <= lastVideoTime + 0.01) {
+                stalledVideoTicks += 1;
+            } else {
+                stalledVideoTicks = 0;
+            }
+            lastVideoTime = currentTime;
+
+            if (loadingTopVideo.paused || stalledVideoTicks >= 2) {
+                stalledVideoTicks = 0;
+                kickVideoPlayback(true);
+            }
+        }, 1200);
+    };
+
+    const animateProgress = (timestamp) => {
+        if (!progressLastTimestamp) {
+            progressLastTimestamp = timestamp;
+        }
+        const deltaSeconds = Math.min((timestamp - progressLastTimestamp) / 1000, 0.1);
+        progressLastTimestamp = timestamp;
+        if (progressLoopActive) {
+            refreshVisualTarget(timestamp);
+        }
+
         const diff = targetProgress - displayedProgress;
-        if (Math.abs(diff) < 0.2) {
+        if (diff <= PROGRESS_EPSILON) {
             displayedProgress = targetProgress;
         } else {
-            displayedProgress += diff * 0.18;
+            const speed = clamp(diff * 6, PROGRESS_MIN_SPEED, PROGRESS_MAX_SPEED);
+            displayedProgress = Math.min(targetProgress, displayedProgress + speed * deltaSeconds);
         }
 
         loadingProgress.style.width = `${displayedProgress}%`;
         loadingPercent.textContent = `${Math.round(displayedProgress)}%`;
+        updateTopMediaPosition(displayedProgress);
 
-        if (displayedProgress !== targetProgress) {
+        if (progressLoopActive || (targetProgress - displayedProgress) > PROGRESS_EPSILON) {
             progressAnimationFrame = window.requestAnimationFrame(animateProgress);
             return;
         }
+        displayedProgress = targetProgress;
+        loadingProgress.style.width = `${displayedProgress}%`;
+        loadingPercent.textContent = `${Math.round(displayedProgress)}%`;
+        updateTopMediaPosition(displayedProgress);
         progressAnimationFrame = null;
+        progressLastTimestamp = 0;
     };
 
     const setProgress = (progress, message) => {
         const next = Math.max(0, Math.min(100, Number(progress) || 0));
-        targetProgress = Math.max(targetProgress, next);
+        const previousActual = actualProgress;
+        actualProgress = Math.max(actualProgress, next);
+        if (actualProgress > previousActual + PROGRESS_EPSILON) {
+            lastServerProgressAt = nowMs();
+        }
+        targetProgress = Math.max(targetProgress, actualProgress);
+        if (actualProgress >= 100) {
+            targetProgress = 100;
+        }
         if (message) loadingMessage.textContent = message;
         if (!progressAnimationFrame) {
             progressAnimationFrame = window.requestAnimationFrame(animateProgress);
@@ -312,7 +509,13 @@
 
     const showError = (message, title = i18n.errorTitle) => {
         importError.hidden = false;
-        importError.innerHTML = `<strong>${title}</strong><span>${message || i18n.errorDefault}</span>`;
+        importError.textContent = "";
+        const titleNode = document.createElement("strong");
+        titleNode.textContent = String(title || i18n.errorTitle);
+        const messageNode = document.createElement("span");
+        messageNode.textContent = String(message || i18n.errorDefault);
+        importError.appendChild(titleNode);
+        importError.appendChild(messageNode);
     };
 
     const hideError = () => {
@@ -364,12 +567,24 @@
         langSelect.disabled = isLoading || !isManualMode;
         document.body.classList.toggle("modal-open", isLoading);
 
+        if (isLoading) {
+            progressLoopActive = true;
+            window.requestAnimationFrame(() => updateTopMediaPosition(displayedProgress));
+            startVideoWatchdog();
+            if (!progressAnimationFrame) {
+                progressAnimationFrame = window.requestAnimationFrame(animateProgress);
+            }
+        }
+
         if (!isLoading) {
+            progressLoopActive = false;
             stopHintTicker();
+            stopVideoWatchdog();
             if (progressAnimationFrame) {
                 cancelAnimationFrame(progressAnimationFrame);
                 progressAnimationFrame = null;
             }
+            progressLastTimestamp = 0;
         }
     };
 
@@ -453,7 +668,31 @@
         if (lower.includes("post only")) {
             return i18n.errorPostOnly;
         }
+        if (lower.includes("turnstile required")) {
+            return i18n.errorTurnstileRequired;
+        }
+        if (lower.includes("turnstile failed")) {
+            return i18n.errorTurnstileFailed;
+        }
         return text;
+    };
+
+    const getTurnstileToken = () => {
+        if (!turnstileEnabled) return "";
+        if (window.turnstile && turnstileWidget) {
+            try {
+                return String(window.turnstile.getResponse(turnstileWidget) || "").trim();
+            } catch (_) {}
+        }
+        const fallbackInput = form.querySelector('input[name="cf-turnstile-response"]');
+        return String(fallbackInput?.value || "").trim();
+    };
+
+    const resetTurnstile = () => {
+        if (!turnstileEnabled || !window.turnstile || !turnstileWidget) return;
+        try {
+            window.turnstile.reset(turnstileWidget);
+        } catch (_) {}
     };
 
     const validateImportForm = (mode) => {
@@ -466,14 +705,14 @@
                 markFieldErrors(invalidFields);
                 return i18n.errorManualRequired;
             }
-            return "";
+        } else {
+            const pageUrl = pageUrlInput.value.trim();
+            if (!pageUrl) {
+                markFieldErrors([pageUrlInput]);
+                return i18n.errorNeedLink;
+            }
         }
 
-        const pageUrl = pageUrlInput.value.trim();
-        if (!pageUrl) {
-            markFieldErrors([pageUrlInput]);
-            return i18n.errorNeedLink;
-        }
         return "";
     };
 
@@ -551,7 +790,7 @@
             if (payload.status === "error") {
                 throw new Error(payload.error || i18n.errorImportFailed);
             }
-            await sleep(1200);
+            await sleep(900);
         }
     };
 
@@ -587,10 +826,25 @@
             return;
         }
 
+        if (turnstileEnabled && (!window.turnstile || !turnstileWidget)) {
+            showError(i18n.errorTurnstileUnavailable);
+            return;
+        }
+
+        const turnstileToken = getTurnstileToken();
+        if (turnstileEnabled && !turnstileToken) {
+            showError(i18n.errorTurnstileRequired);
+            return;
+        }
+
         displayedProgress = 0;
         targetProgress = 0;
+        actualProgress = 0;
+        progressLastTimestamp = 0;
+        lastServerProgressAt = nowMs();
         loadingProgress.style.width = "0%";
         loadingPercent.textContent = "0%";
+        updateTopMediaPosition(0);
         loadingMessage.textContent = i18n.loadingPrepare;
         runHintTicker();
         setLoadingState(true);
@@ -602,12 +856,14 @@
                 server_id: serverSelect.value.trim(),
                 lang: langSelect.value.trim(),
                 page_url: "",
+                turnstile_token: turnstileToken,
             }
             : {
                 page_url: pageUrlInput.value.trim(),
                 token: "",
                 server_id: "",
                 lang: "",
+                turnstile_token: turnstileToken,
             };
 
         try {
@@ -621,6 +877,7 @@
 
             if (!response.ok) {
                 const text = await response.text();
+                resetTurnstile();
                 throw new Error(normalizeServerError(text, mode));
             }
 
@@ -632,6 +889,7 @@
             await pollImportStatus(result.session_id, payload);
         } catch (error) {
             setLoadingState(false);
+            resetTurnstile();
             showError(normalizeServerError(error.message, mode), i18n.errorHeader);
         }
     });
@@ -662,6 +920,30 @@
         field.addEventListener("change", saveFormState);
         field.addEventListener("input", saveFormState);
         field.addEventListener("input", () => field.classList.remove("field-invalid"));
+    });
+
+    if (loadingTopVideo) {
+        ["stalled", "waiting", "suspend", "emptied", "error"].forEach((eventName) => {
+            loadingTopVideo.addEventListener(eventName, () => {
+                if (!loadingModal.hidden) kickVideoPlayback(true);
+            });
+        });
+        loadingTopVideo.addEventListener("pause", () => {
+            if (!loadingModal.hidden) kickVideoPlayback(false);
+        });
+        loadingTopVideo.addEventListener("ended", () => {
+            loadingTopVideo.currentTime = 0;
+            if (!loadingModal.hidden) kickVideoPlayback(false);
+        });
+    }
+
+    window.addEventListener("resize", () => {
+        updateTopMediaPosition(displayedProgress);
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && !loadingModal.hidden) {
+            kickVideoPlayback(false);
+        }
     });
 
     applyMode("auto");

@@ -15,14 +15,14 @@ import threading
 import time
 from functools import lru_cache
 from hashlib import sha1
-from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlsplit, urlunsplit
 
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
@@ -39,26 +39,41 @@ from .cloud import (
     import_payload_from_cloud,
     refresh_oauth_token,
 )
+from .config_store import get_app_address, get_app_json
 from .localization import (
+    SUPPORTED_LANGUAGES,
     SITE_LANGUAGE_COOKIE_KEY,
     SITE_LANGUAGE_SESSION_KEY,
     get_request_language,
+    language_from_path_segment,
     normalize_language_code,
     translate,
 )
+from .maintenance import (
+    MAINTENANCE_BYPASS_SESSION_KEY,
+    MAINTENANCE_CONFIG_KEY,
+    normalize_maintenance_payload,
+)
+from .models import Banner, ImportSession, Pull, StaticCharacter, VersionTopStatsSnapshot, WeaponCatalog
 from .services import fetch_all_records
-
-
-IMPORT_PROGRESS = {}
-IMPORT_PROGRESS_LOCK = threading.Lock()
-IMPORT_SESSIONS = {}
-IMPORT_SESSION_COUNTER = 0
+from .turnstile import is_turnstile_enabled, verify_turnstile_token
+from .import_runtime import (
+    all_import_sessions,
+    get_import_session,
+    get_progress,
+    latest_import_session,
+    next_import_session_id,
+    set_progress,
+    upsert_import_session,
+)
 
 POOL_LABELS = {
     "E_CharacterGachaPoolType_Standard": "dashboard.pool.standard",
     "E_CharacterGachaPoolType_Special": "dashboard.pool.character",
     "E_CharacterGachaPoolType_Beginner": "dashboard.pool.beginner",
 }
+SPECIAL_POOL_ID_RE = re.compile(r"^special_(\d+)_(\d+)_(\d+)$", flags=re.IGNORECASE)
+VERSION_TOP_CHARACTERS_LIMIT = 3
 
 DASHBOARD_POOLS = [
     {
@@ -92,11 +107,25 @@ DASHBOARD_POOLS = [
 ]
 
 OFFICIAL_REPOSITORY_URL = "https://github.com/Overl1te/EndfieldPass"
-DEFAULT_DONATE_URL = "https://github.com/sponsors/Overl1te"
+DEFAULT_DONATE_URL = "https://pay.cloudtips.ru/p/ead6cda5"
 
 CLOUD_AUTH_SESSION_KEY = "cloud_auth"
 CLOUD_OAUTH_STATE_SESSION_KEY = "cloud_oauth_state"
 SETTINGS_FLASH_SESSION_KEY = "settings_flash"
+
+MAX_JSON_BODY_BYTES = 1024 * 1024
+MAX_HISTORY_FILE_BYTES = 8 * 1024 * 1024
+MAX_HISTORY_SESSIONS = 200
+MAX_HISTORY_PULLS_PER_SESSION = 50000
+MAX_HISTORY_TOTAL_PULLS = 250000
+MAX_TOKEN_LENGTH = 2048
+MAX_PAGE_URL_LENGTH = 4096
+MAX_SERVER_ID_LENGTH = 16
+
+TOKEN_RE = re.compile(r"^[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]{8,2048}$")
+SERVER_ID_RE = re.compile(r"^\d{1,16}$")
+LANG_RE = re.compile(r"^[A-Za-z]{2,4}(?:-[A-Za-z]{2,8}){0,2}$")
+POOL_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def _tr_lang(language, key, **kwargs):
@@ -256,20 +285,128 @@ WEAPON_OFFICIAL_NAMES = {
 }
 
 
-def _character_official_name(character, language):
+def _runtime_character_official_names():
+    """Return character official names map from DB with fallback merge."""
+    payload = get_app_json("CHARACTER_OFFICIAL_NAMES", default={})
+    if not isinstance(payload, dict) or not payload:
+        return CHARACTER_OFFICIAL_NAMES
+    merged = dict(CHARACTER_OFFICIAL_NAMES)
+    for icon, names in payload.items():
+        icon_key = str(icon or "").strip()
+        if not icon_key or not isinstance(names, dict):
+            continue
+        merged[icon_key] = {str(lang or "").strip(): str(text or "") for lang, text in names.items()}
+    return merged
+
+
+def _runtime_weapon_official_names():
+    """Return weapon official names map from DB with fallback merge."""
+    payload = get_app_json("WEAPON_OFFICIAL_NAMES", default={})
+    if not isinstance(payload, dict) or not payload:
+        return WEAPON_OFFICIAL_NAMES
+    merged = dict(WEAPON_OFFICIAL_NAMES)
+    for weapon_key, names in payload.items():
+        key = str(weapon_key or "").strip()
+        if not key or not isinstance(names, dict):
+            continue
+        merged[key] = {str(lang or "").strip(): str(text or "") for lang, text in names.items()}
+    return merged
+
+
+def _runtime_characters():
+    """Return character list from DB, fallback to static constant when absent."""
+    payload = get_app_json("CHARACTERS", default=[])
+    if not isinstance(payload, list):
+        return CHARACTERS
+    rows = [dict(item) for item in payload if isinstance(item, dict)]
+    return rows or CHARACTERS
+
+
+def _runtime_rarity_icons():
+    """Return rarity->icon map from DB with fallback merge."""
+    payload = get_app_json("RARITY_ICONS", default={})
+    if not isinstance(payload, dict) or not payload:
+        return RARITY_ICONS
+    merged = {int(k): str(v or "") for k, v in RARITY_ICONS.items()}
+    for raw_key, raw_value in payload.items():
+        try:
+            key = int(raw_key)
+        except (TypeError, ValueError):
+            continue
+        value = str(raw_value or "").strip()
+        if not value:
+            continue
+        merged[key] = value
+    return merged
+
+
+def _runtime_character_roles():
+    """Return character role metadata map from DB with fallback merge."""
+    payload = get_app_json("CHARACTER_ROLES", default={})
+    if not isinstance(payload, dict) or not payload:
+        return CHARACTER_ROLES
+    merged = dict(CHARACTER_ROLES)
+    for key, value in payload.items():
+        code = str(key or "").strip()
+        if not code or not isinstance(value, dict):
+            continue
+        merged[code] = {
+            "label_key": str(value.get("label_key") or "").strip(),
+            "icon": str(value.get("icon") or "").strip(),
+        }
+    return merged
+
+
+def _runtime_character_weapons():
+    """Return character weapon metadata map from DB with fallback merge."""
+    payload = get_app_json("CHARACTER_WEAPONS", default={})
+    if not isinstance(payload, dict) or not payload:
+        return CHARACTER_WEAPONS
+    merged = dict(CHARACTER_WEAPONS)
+    for key, value in payload.items():
+        code = str(key or "").strip()
+        if not code or not isinstance(value, dict):
+            continue
+        merged[code] = {
+            "label_key": str(value.get("label_key") or "").strip(),
+            "icon": str(value.get("icon") or "").strip(),
+        }
+    return merged
+
+
+def _runtime_character_elements():
+    """Return character element metadata map from DB with fallback merge."""
+    payload = get_app_json("CHARACTER_ELEMENTS", default={})
+    if not isinstance(payload, dict) or not payload:
+        return CHARACTER_ELEMENTS
+    merged = dict(CHARACTER_ELEMENTS)
+    for key, value in payload.items():
+        code = str(key or "").strip()
+        if not code or not isinstance(value, dict):
+            continue
+        merged[code] = {
+            "label_key": str(value.get("label_key") or "").strip(),
+            "icon": str(value.get("icon") or "").strip(),
+        }
+    return merged
+
+
+def _character_official_name(character, language, official_names_map=None):
     """Resolve localized official character name for supported interface languages."""
     icon = str(character.get("icon") or "").strip()
-    names = CHARACTER_OFFICIAL_NAMES.get(icon, {})
+    names_index = official_names_map if isinstance(official_names_map, dict) else _runtime_character_official_names()
+    names = names_index.get(icon, {})
     normalized_language = normalize_language_code(language)
     return names.get(normalized_language) or names.get("ru") or str(character.get("name") or "")
 
 
-def _character_all_aliases(character):
+def _character_all_aliases(character, official_names_map=None):
     """Build all known aliases including official names for supported languages."""
     values = [str(character.get("name") or "").strip()]
     values.extend(str(alias or "").strip() for alias in (character.get("aliases") or []))
 
-    names = CHARACTER_OFFICIAL_NAMES.get(str(character.get("icon") or "").strip(), {})
+    names_index = official_names_map if isinstance(official_names_map, dict) else _runtime_character_official_names()
+    names = names_index.get(str(character.get("icon") or "").strip(), {})
     values.extend(str(localized_name or "").strip() for localized_name in names.values())
 
     unique = []
@@ -282,17 +419,19 @@ def _character_all_aliases(character):
     return unique
 
 
-def _weapon_localized_name(key, language):
+def _weapon_localized_name(key, language, official_names_map=None):
     """Resolve localized official weapon name by catalog key."""
-    names = WEAPON_OFFICIAL_NAMES.get(str(key or "").strip(), {})
+    names_index = official_names_map if isinstance(official_names_map, dict) else _runtime_weapon_official_names()
+    names = names_index.get(str(key or "").strip(), {})
     normalized_language = normalize_language_code(language)
     return names.get(normalized_language) or names.get("ru") or str(key or "")
 
 
-def _weapon_all_aliases(key):
+def _weapon_all_aliases(key, official_names_map=None):
     """Build known aliases for weapon lookup from all supported language variants."""
     raw_key = str(key or "").strip()
-    names = WEAPON_OFFICIAL_NAMES.get(raw_key, {})
+    names_index = official_names_map if isinstance(official_names_map, dict) else _runtime_weapon_official_names()
+    names = names_index.get(raw_key, {})
     values = [raw_key]
     values.extend(str(localized_name or "").strip() for localized_name in names.values())
     unique = []
@@ -308,14 +447,15 @@ def _weapon_all_aliases(key):
 def _build_weapon_name_refs(language):
     """Build lightweight weapon alias map for client-side name localization."""
     refs = []
-    for key in WEAPON_OFFICIAL_NAMES.keys():
+    names_index = _runtime_weapon_official_names()
+    for key in names_index.keys():
         icon_name = f"{key}.webp"
         icon_token = _weapon_icon_token(6, icon_name)
         icon_url = reverse("weapon_icon", args=[6, icon_token]) if _weapon_icon_exists(6, icon_name) else ""
         refs.append(
             {
-                "name": _weapon_localized_name(key, language),
-                "aliases": _weapon_all_aliases(key),
+                "name": _weapon_localized_name(key, language, names_index),
+                "aliases": _weapon_all_aliases(key, names_index),
                 "icon": icon_name,
                 "icon_url": icon_url,
             }
@@ -368,18 +508,43 @@ def _build_character_obtained_map(session):
     if not session:
         return obtained_map
 
-    pulls = session.pulls.order_by("gacha_ts", "seq_id")
-    for pull in pulls:
-        key = _normalize_character_key(pull.char_name)
-        if key and key not in obtained_map:
-            obtained_map[key] = pull.gacha_ts
+    if hasattr(session, "pulls"):
+        pulls = session.pulls.order_by("gacha_ts", "seq_id")
+        for pull in pulls:
+            key = _normalize_character_key(pull.char_name)
+            if key and key not in obtained_map:
+                obtained_map[key] = pull.gacha_ts
+        return obtained_map
+
+    if isinstance(session, dict):
+        raw_pulls = [value for value in list(session.get("pulls") or []) if isinstance(value, dict)]
+        pulls = sorted(
+            raw_pulls,
+            key=lambda pull: (
+                _to_int(pull.get("gacha_ts") if "gacha_ts" in pull else pull.get("gachaTs"), default=0),
+                _to_int(pull.get("seq_id") if "seq_id" in pull else pull.get("seqId"), default=0),
+            ),
+        )
+        for pull in pulls:
+            item_type = str(pull.get("item_type") or pull.get("itemType") or "").strip().lower()
+            if item_type == "weapon":
+                continue
+
+            key = _normalize_character_key(pull.get("char_name") if "char_name" in pull else pull.get("charName"))
+            if not key:
+                continue
+
+            ts = _to_int(pull.get("gacha_ts") if "gacha_ts" in pull else pull.get("gachaTs"), default=0) or None
+            existing_ts = obtained_map.get(key)
+            if key not in obtained_map or (not existing_ts and ts):
+                obtained_map[key] = ts
     return obtained_map
 
 
-def _character_lookup_keys(character):
+def _character_lookup_keys(character, official_names_map=None):
     """Build all lookup keys for a character definition."""
     keys = {_normalize_character_key(character.get("name"))}
-    for alias in _character_all_aliases(character):
+    for alias in _character_all_aliases(character, official_names_map):
         keys.add(_normalize_character_key(alias))
     icon_stem = str(character.get("icon", "")).rsplit(".", 1)[0]
     keys.add(_normalize_character_key(icon_stem))
@@ -391,20 +556,44 @@ def _get_first_hero_ts(session):
     if not session:
         return None
 
-    first_with_ts = (
-        session.pulls.exclude(gacha_ts__isnull=True)
-        .order_by("gacha_ts", "seq_id")
-        .values_list("gacha_ts", flat=True)
-        .first()
-    )
-    if first_with_ts:
-        return first_with_ts
+    if hasattr(session, "pulls"):
+        first_with_ts = (
+            session.pulls.exclude(gacha_ts__isnull=True)
+            .order_by("gacha_ts", "seq_id")
+            .values_list("gacha_ts", flat=True)
+            .first()
+        )
+        if first_with_ts:
+            return first_with_ts
 
-    return (
-        session.pulls.order_by("seq_id")
-        .values_list("gacha_ts", flat=True)
-        .first()
-    )
+        return (
+            session.pulls.order_by("seq_id")
+            .values_list("gacha_ts", flat=True)
+            .first()
+        )
+
+    if isinstance(session, dict):
+        raw_pulls = [value for value in list(session.get("pulls") or []) if isinstance(value, dict)]
+        if not raw_pulls:
+            return None
+
+        pulls_with_ts = []
+        pulls_by_seq = []
+        for pull in raw_pulls:
+            ts = _to_int(pull.get("gacha_ts") if "gacha_ts" in pull else pull.get("gachaTs"), default=0) or None
+            seq_id = _to_int(pull.get("seq_id") if "seq_id" in pull else pull.get("seqId"), default=0)
+            pulls_by_seq.append((seq_id, ts))
+            if ts:
+                pulls_with_ts.append((ts, seq_id))
+
+        if pulls_with_ts:
+            pulls_with_ts.sort(key=lambda value: (value[0], value[1]))
+            return pulls_with_ts[0][0]
+
+        pulls_by_seq.sort(key=lambda value: value[0])
+        return pulls_by_seq[0][1]
+
+    return None
 
 
 def _build_history_rows(pulls, language):
@@ -446,13 +635,14 @@ def _build_history_rows(pulls, language):
 def _build_dashboard_character_icon_refs(language):
     """Build lightweight character alias map for dashboard icon/name resolution."""
     refs = []
-    for character in CHARACTERS:
+    names_index = _runtime_character_official_names()
+    for character in _runtime_characters():
         icon = str(character.get("icon") or "").strip()
         if not icon:
             continue
         icon_stem = icon.rsplit(".", 1)[0]
-        keys = [icon_stem, *_character_all_aliases(character)]
-        localized_name = _character_official_name(character, language)
+        keys = [icon_stem, *_character_all_aliases(character, names_index)]
+        localized_name = _character_official_name(character, language, names_index)
         refs.append(
             {
                 "icon": icon,
@@ -461,6 +651,294 @@ def _build_dashboard_character_icon_refs(language):
             }
         )
     return refs
+
+
+def _to_static_url(static_path):
+    """Convert static path stored in DB to browser URL."""
+    path = str(static_path or "").replace("\\", "/").strip()
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://", "/")):
+        return path
+    return static(path.lstrip("/"))
+
+
+def _build_special_banner_refs():
+    """Build manual banner metadata list from admin-configured records."""
+    refs = []
+    banners = (
+        Banner.objects.select_related("top_character")
+        .prefetch_related("six_star_characters")
+        .order_by("pool_id")
+    )
+    for banner in banners:
+        top = banner.top_character
+        refs.append(
+            {
+                "id": banner.pool_id,
+                "name": banner.name,
+                "start_date": banner.start_date.isoformat() if banner.start_date else "",
+                "end_date": banner.end_date.isoformat() if banner.end_date else "",
+                "top_character": {
+                    "id": top.code,
+                    "name": top.name,
+                    "aliases": top.alias_list,
+                    "icon_url": _to_static_url(top.static_icon_path),
+                },
+                "six_star_characters": [
+                    {
+                        "id": character.code,
+                        "name": character.name,
+                        "icon_url": _to_static_url(character.static_icon_path),
+                    }
+                    for character in banner.six_star_characters.all()
+                ],
+            }
+        )
+    return refs
+
+
+def _parse_special_pool_meta(pool_id):
+    """Parse special pool id like special_1_0_3 into numeric parts."""
+    value = str(pool_id or "").strip().lower()
+    match = SPECIAL_POOL_ID_RE.fullmatch(value)
+    if not match:
+        return None
+    return {
+        "major": _to_int(match.group(1), default=0),
+        "minor": _to_int(match.group(2), default=0),
+        "banner": _to_int(match.group(3), default=0),
+    }
+
+
+def _normalize_character_key_server(value):
+    """Normalize character identifiers for stable matching."""
+    return re.sub(r"[\W_]+", "", str(value or "").strip().lower(), flags=re.UNICODE)
+
+
+def _resolve_active_version_banners():
+    """Return active (latest) version tuple and related banners."""
+    banners = list(
+        Banner.objects.select_related("top_character")
+        .prefetch_related("six_star_characters")
+        .all()
+    )
+    parsed = []
+    for banner in banners:
+        meta = _parse_special_pool_meta(banner.pool_id)
+        if not meta:
+            continue
+        parsed.append((meta["major"], meta["minor"], banner))
+    if not parsed:
+        return None, []
+
+    active_major, active_minor = max((major, minor) for major, minor, _banner in parsed)
+    active = [
+        banner for major, minor, banner in parsed
+        if major == active_major and minor == active_minor
+    ]
+    active.sort(key=lambda value: _to_int((_parse_special_pool_meta(value.pool_id) or {}).get("banner"), default=0))
+    return (active_major, active_minor), active
+
+
+def _compute_version_top_stats_from_pulls(pulls, tracked_characters_count=None):
+    """Compute top character stats for the latest configured version only."""
+    active_version, active_banners = _resolve_active_version_banners()
+    if not active_version or not active_banners:
+        return None
+
+    major, minor = active_version
+    version_label = f"{major}.{minor}"
+    active_top_characters = {}
+    for banner in active_banners:
+        character = getattr(banner, "top_character", None)
+        if not character:
+            continue
+        code = str(character.code or "").strip().lower()
+        if not code or code in active_top_characters:
+            continue
+        active_top_characters[code] = character
+        if len(active_top_characters) >= VERSION_TOP_CHARACTERS_LIMIT:
+            break
+    if not active_top_characters:
+        return None
+
+    counters = {code: 0 for code in active_top_characters.keys()}
+    current_banner_counters = {code: 0 for code in active_top_characters.keys()}
+    active_banner = next((banner for banner in active_banners if getattr(banner, "is_active", False)), None)
+    if active_banner is None and active_banners:
+        active_banner = active_banners[-1]
+    current_banner_pool_id = str(getattr(active_banner, "pool_id", "") or "").strip().lower()
+    for pull in pulls or []:
+        raw_pool_id = str(pull.get("pool_id") or "").strip().lower()
+        pool_meta = _parse_special_pool_meta(raw_pool_id)
+        if not pool_meta or pool_meta["major"] != major or pool_meta["minor"] != minor:
+            continue
+        if str(pull.get("item_type") or "").strip().lower() == "weapon":
+            continue
+
+        pull_keys = {
+            _normalize_character_key_server(pull.get("char_name")),
+            _normalize_character_key_server(pull.get("char_id")),
+        }
+        pull_keys = {value for value in pull_keys if value}
+        if not pull_keys:
+            continue
+
+        for code, character in active_top_characters.items():
+            aliases = character.alias_list
+            alias_keys = {_normalize_character_key_server(alias) for alias in aliases}
+            alias_keys = {value for value in alias_keys if value}
+            if alias_keys.intersection(pull_keys):
+                counters[code] += 1
+                if current_banner_pool_id and raw_pool_id == current_banner_pool_id:
+                    current_banner_counters[code] += 1
+                break
+
+    rows = []
+    for code, character in active_top_characters.items():
+        drop_count = _to_int(counters.get(code), default=0)
+        current_banner_drop_count = _to_int(current_banner_counters.get(code), default=0)
+        rows.append(
+            {
+                "character_code": code,
+                "character_name": character.name,
+                "aliases": character.alias_list,
+                "icon_url": _to_static_url(character.static_icon_path),
+                "drop_count": drop_count,
+                "current_banner_drop_count": current_banner_drop_count,
+            }
+        )
+
+    rows.sort(key=lambda value: (-_to_int(value.get("drop_count"), default=0), str(value.get("character_name") or "").lower()))
+
+    rows = rows[:VERSION_TOP_CHARACTERS_LIMIT]
+    total_top_drops = sum(_to_int(row.get("drop_count"), default=0) for row in rows)
+    for row in rows:
+        count = _to_int(row.get("drop_count"), default=0)
+        row["share_percent"] = int(round((count / total_top_drops) * 100)) if total_top_drops > 0 else 0
+
+    return {
+        "version_major": major,
+        "version_minor": minor,
+        "version_label": version_label,
+        "active_banner_pool_id": current_banner_pool_id,
+        "tracked_characters_count": len(rows),
+        "total_top_drops": total_top_drops,
+        "stats": rows,
+    }
+
+
+def _save_version_top_stats_snapshot(source_session_id, pulls):
+    """Persist one version top-stats snapshot for current import session."""
+    snapshot_payload = _compute_version_top_stats_from_pulls(pulls=pulls)
+    if not snapshot_payload:
+        return None
+    return VersionTopStatsSnapshot.objects.create(
+        source_session_id=_to_int(source_session_id, default=0),
+        version_major=_to_int(snapshot_payload.get("version_major"), default=0),
+        version_minor=_to_int(snapshot_payload.get("version_minor"), default=0),
+        version_label=str(snapshot_payload.get("version_label") or ""),
+        tracked_characters_count=_to_int(snapshot_payload.get("tracked_characters_count"), default=0),
+        total_top_drops=_to_int(snapshot_payload.get("total_top_drops"), default=0),
+        stats=list(snapshot_payload.get("stats") or []),
+    )
+
+
+def _latest_version_top_stats_payload():
+    """Return latest stored top-stats payload for active version."""
+    active_version, active_banners = _resolve_active_version_banners()
+    if not active_version:
+        return {}
+    major, minor = active_version
+    active_banner = next((banner for banner in active_banners if getattr(banner, "is_active", False)), None)
+    if active_banner is None and active_banners:
+        active_banner = active_banners[-1]
+    active_banner_pool_id = str(getattr(active_banner, "pool_id", "") or "").strip().lower()
+
+    # Build deterministic fallback rows from active version banners so card
+    # still renders when no import snapshot exists yet.
+    fallback_rows = []
+    fallback_seen = set()
+    for banner in active_banners:
+        character = getattr(banner, "top_character", None)
+        if not character:
+            continue
+        code = str(character.code or "").strip().lower()
+        if not code or code in fallback_seen:
+            continue
+        fallback_seen.add(code)
+        fallback_rows.append(
+            {
+                "character_code": code,
+                "character_name": character.name,
+                "aliases": character.alias_list,
+                "icon_url": _to_static_url(character.static_icon_path),
+                "drop_count": 0,
+                "current_banner_drop_count": 0,
+                "share_percent": 0,
+            }
+        )
+        if len(fallback_rows) >= VERSION_TOP_CHARACTERS_LIMIT:
+            break
+
+    snapshot = (
+        VersionTopStatsSnapshot.objects
+        .filter(version_major=major, version_minor=minor)
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    if not snapshot:
+        return {
+            "version_major": major,
+            "version_minor": minor,
+            "version_label": f"{major}.{minor}",
+            "active_banner_pool_id": active_banner_pool_id,
+            "tracked_characters_count": len(fallback_rows),
+            "total_top_drops": 0,
+            "stats": fallback_rows,
+        }
+    normalized_label = f"{snapshot.version_major}.{snapshot.version_minor}"
+    snapshot_rows = list(snapshot.stats or [])[:VERSION_TOP_CHARACTERS_LIMIT]
+    if not snapshot_rows and fallback_rows:
+        snapshot_rows = fallback_rows
+    static_map = {
+        str(character.code or "").strip().lower(): character
+        for character in StaticCharacter.objects.filter(
+            code__in=[
+                str((row or {}).get("character_code") or "").strip().lower()
+                for row in snapshot_rows
+            ]
+        )
+    }
+    normalized_rows = []
+    for row in snapshot_rows:
+        code = str(row.get("character_code") or "").strip().lower()
+        character = static_map.get(code)
+        normalized_rows.append(
+            {
+                "character_code": code,
+                "character_name": str(row.get("character_name") or (character.name if character else "")),
+                "aliases": list(row.get("aliases") or (character.alias_list if character else [])),
+                "icon_url": str(row.get("icon_url") or ""),
+                "drop_count": _to_int(row.get("drop_count"), default=0),
+                "current_banner_drop_count": _to_int(row.get("current_banner_drop_count"), default=0),
+                "share_percent": 0,
+            }
+        )
+    total_top_drops = sum(row["drop_count"] for row in normalized_rows)
+    for row in normalized_rows:
+        count = row["drop_count"]
+        row["share_percent"] = int(round((count / total_top_drops) * 100)) if total_top_drops > 0 else 0
+    return {
+        "version_major": snapshot.version_major,
+        "version_minor": snapshot.version_minor,
+        "version_label": normalized_label,
+        "active_banner_pool_id": active_banner_pool_id,
+        "tracked_characters_count": len(normalized_rows),
+        "total_top_drops": total_top_drops,
+        "stats": normalized_rows,
+    }
 
 
 def dashboard(request):
@@ -496,6 +974,7 @@ def dashboard(request):
             "latest_session": None,
             "character_icon_refs": _build_dashboard_character_icon_refs(language),
             "weapon_name_refs": _build_weapon_name_refs(language),
+            "version_top_stats": _latest_version_top_stats_payload(),
         },
     )
 
@@ -503,32 +982,65 @@ def dashboard(request):
 def characters_page(request):
     """Render character collection shell. Client computes obtained status from local/cloud storage."""
     language = get_request_language(request)
-    latest_session = None
     obtained_map = {}
-    first_hero_ts = None
+    first_hero_ts_candidates = []
+    sessions_for_status = []
+
+    runtime_session = _latest_import_session()
+    if runtime_session:
+        sessions_for_status.append(runtime_session)
+
+    db_session = ImportSession.objects.all().order_by("-created_at", "-id").first()
+    if db_session is not None:
+        sessions_for_status.append(db_session)
+
+    for source_session in sessions_for_status:
+        current_map = _build_character_obtained_map(source_session)
+        for key, value in current_map.items():
+            if key not in obtained_map:
+                obtained_map[key] = value
+                continue
+            prev = obtained_map.get(key)
+            if prev and value:
+                obtained_map[key] = min(prev, value)
+            elif value:
+                obtained_map[key] = value
+
+        first_hero_ts = _get_first_hero_ts(source_session)
+        if first_hero_ts:
+            first_hero_ts_candidates.append(first_hero_ts)
+
+    first_hero_ts = min(first_hero_ts_candidates) if first_hero_ts_candidates else None
     characters = []
-    for character in CHARACTERS:
-        localized_name = _character_official_name(character, language)
-        element_meta = CHARACTER_ELEMENTS.get(character["element"], {})
-        weapon_meta = CHARACTER_WEAPONS.get(character["weapon"], {})
-        role_meta = CHARACTER_ROLES.get(character["role"], {})
+    character_elements = _runtime_character_elements()
+    character_weapons = _runtime_character_weapons()
+    character_roles = _runtime_character_roles()
+    rarity_icons = _runtime_rarity_icons()
+    character_names_index = _runtime_character_official_names()
+
+    for character in _runtime_characters():
+        localized_name = _character_official_name(character, language, character_names_index)
+        element_meta = character_elements.get(character["element"], {})
+        weapon_meta = character_weapons.get(character["weapon"], {})
+        role_meta = character_roles.get(character["role"], {})
         rarity = int(character.get("rarity") or 0)
-        lookup_keys = _character_lookup_keys(character)
+        lookup_keys = _character_lookup_keys(character, character_names_index)
         matched_values = [obtained_map[key] for key in lookup_keys if key in obtained_map]
         is_obtained = bool(matched_values)
         matched_ts = min((value for value in matched_values if value), default=matched_values[0] if matched_values else None)
 
-        # Endministrator badge appears only when at least one pull exists in history.
-        if character.get("icon") == "Endministrator.png" and first_hero_ts:
+        # Endministrator is always present in collection.
+        if character.get("icon") == "Endministrator.png":
             is_obtained = True
-            matched_ts = first_hero_ts
+            if first_hero_ts and not matched_ts:
+                matched_ts = first_hero_ts
 
         characters.append(
             {
                 **character,
                 "name": localized_name,
-                "aliases": _character_all_aliases(character),
-                "rarity_icon": RARITY_ICONS.get(rarity, ""),
+                "aliases": _character_all_aliases(character, character_names_index),
+                "rarity_icon": rarity_icons.get(rarity, ""),
                 "element_label": _tr_lang(language, element_meta.get("label_key", "")),
                 "element_icon": element_meta.get("icon", ""),
                 "weapon_label": _tr_lang(language, weapon_meta.get("label_key", "")),
@@ -550,12 +1062,198 @@ def characters_page(request):
 
 
 def _build_weapons_catalog(language):
-    """Build weapons catalog from static assets grouped by rarity folders."""
+    """Build weapons catalog from DB with static fallback when catalog is empty."""
+    weapons = _build_weapons_catalog_from_db(language)
+    if weapons:
+        return weapons
+    return _build_weapons_catalog_from_static(language)
+
+
+def _localized_i18n_text(i18n_map, language, fallback=""):
+    """Resolve localized text from i18n JSON object with sane fallback chain."""
+    value = i18n_map if isinstance(i18n_map, dict) else {}
+    normalized = normalize_language_code(language)
+    candidate = value.get(normalized) or value.get("en") or value.get("ru") or fallback
+    return str(candidate or "")
+
+
+def _localized_i18n_list(i18n_map, language):
+    """Resolve localized list from i18n JSON object and normalize to list[str]."""
+    value = i18n_map if isinstance(i18n_map, dict) else {}
+    normalized = normalize_language_code(language)
+    candidate = value.get(normalized) or value.get("en") or value.get("ru") or []
+    if isinstance(candidate, (tuple, list)):
+        return [str(item or "").strip() for item in candidate if str(item or "").strip()]
+    if isinstance(candidate, str) and candidate.strip():
+        return [candidate.strip()]
+    return []
+
+
+def _weapon_type_label_and_icon(type_key, language):
+    """Return localized type label and static icon URL for weapon type key."""
+    meta = _runtime_character_weapons().get(str(type_key or "").strip().lower(), {})
+    label = _tr_lang(language, meta.get("label_key", "")) if meta.get("label_key") else _tr_lang(language, "weapons.type_unknown")
+    icon_name = str(meta.get("icon") or "").strip()
+    icon_url = static(f"img/weapon/{icon_name}") if icon_name else ""
+    return label, icon_url
+
+
+def _normalize_operator_lookup_key(value):
+    """Normalize operator name/alias for icon lookup."""
+    return re.sub(r"[\W_]+", "", str(value or "").strip().lower(), flags=re.UNICODE)
+
+
+def _build_operator_avatar_index(language):
+    """Build operator alias -> avatar map from static characters and DB overrides."""
+    index = {}
+    names_index = _runtime_character_official_names()
+    for character in _runtime_characters():
+        icon_name = str(character.get("icon") or "").strip()
+        if not icon_name:
+            continue
+        localized_name = _character_official_name(character, language, names_index)
+        icon_url = static(f"img/characters/{icon_name}")
+        aliases = _character_all_aliases(character, names_index)
+        aliases.append(localized_name)
+        for alias in aliases:
+            normalized = _normalize_operator_lookup_key(alias)
+            if not normalized or normalized in index:
+                continue
+            index[normalized] = {
+                "name": localized_name,
+                "icon_url": icon_url,
+            }
+
+    for static_character in StaticCharacter.objects.all().only("name", "code", "aliases", "static_icon_path"):
+        icon_url = _to_static_url(static_character.static_icon_path)
+        aliases = list(static_character.alias_list)
+        aliases.extend([static_character.name, static_character.code])
+        for alias in aliases:
+            normalized = _normalize_operator_lookup_key(alias)
+            if not normalized or normalized in index:
+                continue
+            index[normalized] = {
+                "name": static_character.name,
+                "icon_url": icon_url,
+            }
+    return index
+
+
+def _build_operator_cards(operator_names, avatar_index):
+    """Convert operator names to compact avatar payload for modal rendering."""
+    cards = []
+    seen = set()
+    for raw_name in operator_names or []:
+        name = str(raw_name or "").strip()
+        if not name:
+            continue
+        normalized = _normalize_operator_lookup_key(name)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        matched = avatar_index.get(normalized) or {}
+        display_name = str(matched.get("name") or name)
+        fallback = display_name[:1].upper() if display_name else "?"
+        cards.append(
+            {
+                "name": display_name,
+                "icon_url": str(matched.get("icon_url") or ""),
+                "fallback": fallback,
+            }
+        )
+    return cards
+
+
+def _is_placeholder_operator_name(value):
+    """Detect seeded placeholder strings that should not be rendered as operators."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return True
+    markers = (
+        "заполняю",
+        "pending",
+        "folgt",
+        "待补充",
+        "追記予定",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _weapon_stars_icon_url(rarity):
+    """Return stars image URL for rarity when icon file exists."""
+    path = f"img/stars/{int(rarity)} star.webp"
+    absolute = Path(settings.BASE_DIR) / "static" / "img" / "stars" / f"{int(rarity)} star.webp"
+    if absolute.exists():
+        return static(path)
+    return ""
+
+
+def _build_weapons_catalog_from_db(language):
+    """Build full weapon payload from WeaponCatalog rows."""
+    rows = list(WeaponCatalog.objects.all())
+    if not rows:
+        return []
+
+    pending_desc = _tr_lang(language, "weapons.modal.description_pending")
+    pending_skill = _tr_lang(language, "weapons.modal.skill_pending")
+    pending_operator = _tr_lang(language, "weapons.modal.operators_pending")
+    operator_avatar_index = _build_operator_avatar_index(language)
+    weapons = []
+    for row in rows:
+        icon_name = str(row.icon_name or "").strip()
+        rarity = int(row.rarity or 0)
+        icon_token = _weapon_icon_token(rarity, icon_name)
+        type_label, type_icon_url = _weapon_type_label_and_icon(row.weapon_type, language)
+        skills_min = _localized_i18n_list(row.skills_min_i18n, language) or [pending_skill]
+        skills_max = _localized_i18n_list(row.skills_max_i18n, language) or [pending_skill]
+        skills_full = _localized_i18n_list(row.skills_full_i18n, language) or [pending_skill]
+        operators = _localized_i18n_list(row.operators_i18n, language)
+        operators = [
+            value for value in operators
+            if str(value or "").strip()
+            and str(value).strip() != pending_operator
+            and not _is_placeholder_operator_name(value)
+        ]
+        operator_cards = _build_operator_cards(operators, operator_avatar_index)
+        weapons.append(
+            {
+                "key": str(row.key or "").strip(),
+                "name": _localized_i18n_text(row.name_i18n, language, fallback=row.key),
+                "rarity": rarity,
+                "weapon_type": str(row.weapon_type or ""),
+                "weapon_type_label": type_label,
+                "weapon_type_icon_url": type_icon_url,
+                "icon": icon_name,
+                "icon_token": icon_token,
+                "icon_url": reverse("weapon_icon", args=[rarity, icon_token]),
+                "rarity_stars_url": _weapon_stars_icon_url(rarity),
+                "description": _localized_i18n_text(row.description_i18n, language, fallback=pending_desc),
+                "atk_min": int(row.atk_min or 0),
+                "atk_max": int(row.atk_max or 0),
+                "skills_min": skills_min[:3],
+                "skills_max": skills_max[:3],
+                "skills_full": skills_full[:3],
+                "operators": operators,
+                "operator_cards": operator_cards,
+            }
+        )
+
+    weapons.sort(key=lambda value: (-int(value.get("rarity") or 0), str(value.get("name") or "").lower()))
+    return weapons
+
+
+def _build_weapons_catalog_from_static(language):
+    """Build minimal weapon payload from static assets when DB is not seeded yet."""
     weapons_root = Path(settings.BASE_DIR) / "static" / "img" / "weapons"
     if not weapons_root.exists():
         return []
 
     supported_ext = {".webp", ".png", ".jpg", ".jpeg", ".avif"}
+    pending_desc = _tr_lang(language, "weapons.modal.description_pending")
+    pending_skill = _tr_lang(language, "weapons.modal.skill_pending")
+    default_type = WeaponCatalog.TYPE_SHORT
+    type_label, type_icon_url = _weapon_type_label_and_icon(default_type, language)
+    weapon_names_index = _runtime_weapon_official_names()
     weapons = []
     for rarity_dir in weapons_root.iterdir():
         if not rarity_dir.is_dir():
@@ -567,13 +1265,27 @@ def _build_weapons_catalog(language):
         for icon_path in rarity_dir.iterdir():
             if not icon_path.is_file() or icon_path.suffix.lower() not in supported_ext:
                 continue
+            icon_token = _weapon_icon_token(rarity, icon_path.name)
             weapons.append(
                 {
-                    "name": _weapon_localized_name(icon_path.stem, language),
-                    "icon": icon_path.name,
+                    "key": str(icon_path.stem or "").strip(),
+                    "name": _weapon_localized_name(icon_path.stem, language, weapon_names_index),
                     "rarity": rarity,
-                    "icon_token": _weapon_icon_token(rarity, icon_path.name),
-                    "icon_url": reverse("weapon_icon", args=[rarity, _weapon_icon_token(rarity, icon_path.name)]),
+                    "weapon_type": default_type,
+                    "weapon_type_label": type_label,
+                    "weapon_type_icon_url": type_icon_url,
+                    "icon": icon_path.name,
+                    "icon_token": icon_token,
+                    "icon_url": reverse("weapon_icon", args=[rarity, icon_token]),
+                    "rarity_stars_url": _weapon_stars_icon_url(rarity),
+                    "description": pending_desc,
+                    "atk_min": 0,
+                    "atk_max": 0,
+                    "skills_min": [pending_skill],
+                    "skills_max": [pending_skill],
+                    "skills_full": [pending_skill],
+                    "operators": [],
+                    "operator_cards": [],
                 }
             )
 
@@ -582,13 +1294,15 @@ def _build_weapons_catalog(language):
 
 
 def weapons_page(request):
-    """Render weapons catalog page built from local static icons."""
+    """Render weapons catalog page with DB-driven modal-ready payload."""
     language = get_request_language(request)
+    weapons = _build_weapons_catalog(language)
     return render(
         request,
         "core/weapons.html",
         {
-            "weapons": _build_weapons_catalog(language),
+            "weapons": weapons,
+            "weapons_payload": weapons,
         },
     )
 
@@ -669,13 +1383,19 @@ def _to_bool(value):
 
 
 def _history_export_payload():
-    """Build canonical export payload from in-memory import sessions."""
-    sessions = _all_import_sessions()
+    """Build canonical export payload from in-memory sessions with DB fallback."""
+    db_sessions = list(
+        ImportSession.objects
+        .all()
+        .order_by("-created_at", "-id")
+        .prefetch_related("pulls")
+    )
+    sessions = db_sessions if db_sessions else _all_import_sessions()
     return {
         "schema_version": 1,
         "exported_at": datetime.now(tz=timezone.utc).isoformat(),
         "session_count": len(sessions),
-        "pull_count": sum(len((session or {}).get("pulls") or []) for session in sessions),
+        "pull_count": sum(len((_serialize_session(session) or {}).get("pulls") or []) for session in sessions),
         "sessions": [_serialize_session(session) for session in sessions],
     }
 
@@ -877,8 +1597,12 @@ def _ensure_cloud_access_token(request, provider):
 
 def _settings_context(request, message="", message_type="", message_details=""):
     """Build settings page context with cloud connection status."""
-    donate_url = getattr(settings, "DONATE_URL", DEFAULT_DONATE_URL)
-    repository_url = getattr(settings, "OFFICIAL_REPOSITORY_URL", OFFICIAL_REPOSITORY_URL)
+    donate_default = getattr(settings, "DONATE_URL", DEFAULT_DONATE_URL)
+    repository_default = getattr(settings, "OFFICIAL_REPOSITORY_URL", OFFICIAL_REPOSITORY_URL)
+    donate_from_env = str(donate_default or "").strip()
+    repository_from_env = str(repository_default or "").strip()
+    donate_url = donate_from_env or get_app_address("donate_url", donate_default)
+    repository_url = repository_from_env or get_app_address("repository_url", repository_default)
     return {
         "status_message": message,
         "status_message_type": message_type,
@@ -926,11 +1650,37 @@ def set_site_language(request):
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         next_url = reverse("dashboard")
 
+    next_url = _with_language_prefix(next_url, lang)
+
     request.session[SITE_LANGUAGE_SESSION_KEY] = lang
     request.site_language = lang
     response = redirect(next_url)
     response.set_cookie(SITE_LANGUAGE_COOKIE_KEY, lang, max_age=60 * 60 * 24 * 365, samesite="Lax")
     return response
+
+
+def _with_language_prefix(url_value: str, lang: str) -> str:
+    """Ensure URL path starts with /<lang>/ and replace existing language prefix."""
+    value = str(url_value or "").strip()
+    if not value:
+        return f"/{lang}/"
+
+    split = urlsplit(value)
+    raw_path = split.path or "/"
+    path = raw_path if raw_path.startswith("/") else f"/{raw_path}"
+    parts = [part for part in path.split("/") if part]
+    first = language_from_path_segment(parts[0]) if parts else ""
+    if first in SUPPORTED_LANGUAGES:
+        parts[0] = lang
+        prefixed_path = "/" + "/".join(parts)
+    else:
+        if path == "/":
+            prefixed_path = f"/{lang}/"
+        else:
+            prefixed_path = f"/{lang}{path}"
+    if raw_path.endswith("/") and not prefixed_path.endswith("/"):
+        prefixed_path += "/"
+    return urlunsplit(("", "", prefixed_path, split.query, ""))
 
 
 def privacy_policy(request):
@@ -943,16 +1693,112 @@ def cookies_policy(request):
     return render(request, "core/cookies_policy.html")
 
 
+def maintenance_page(request):
+    """Render maintenance landing page with optional launch countdown."""
+    payload = getattr(request, "maintenance_payload", None)
+    if not isinstance(payload, dict):
+        payload = normalize_maintenance_payload(get_app_json(MAINTENANCE_CONFIG_KEY, default={}))
+
+    next_url = (request.GET.get("next") or "").strip() or reverse("dashboard")
+    if not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = reverse("dashboard")
+
+    return render(
+        request,
+        "core/maintenance.html",
+        {
+            "launch_at_ms": payload.get("launch_at_ms") or 0,
+            "launch_at_iso": payload.get("launch_at_iso") or "",
+            "maintenance_message": str(payload.get("message") or "").strip(),
+            "maintenance_next_url": next_url,
+            "maintenance_bypass_url": reverse("maintenance_bypass"),
+        },
+    )
+
+
+def maintenance_bypass(request):
+    """Enable/disable maintenance bypass in current session."""
+    enable_raw = (request.GET.get("enable") or request.POST.get("enable") or "1").strip().lower()
+    enable = enable_raw in {"1", "true", "yes", "on"}
+    json_mode_raw = (request.GET.get("json") or request.POST.get("json") or "").strip().lower()
+    wants_json = json_mode_raw in {"1", "true", "yes", "on"} or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    next_url = (request.GET.get("next") or request.POST.get("next") or "").strip() or reverse("dashboard")
+    if not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = reverse("dashboard")
+
+    if enable:
+        request.session[MAINTENANCE_BYPASS_SESSION_KEY] = True
+    else:
+        request.session.pop(MAINTENANCE_BYPASS_SESSION_KEY, None)
+
+    if wants_json:
+        payload = normalize_maintenance_payload(get_app_json(MAINTENANCE_CONFIG_KEY, default={}))
+        return JsonResponse(
+            {
+                "ok": True,
+                "bypass_enabled": bool(request.session.get(MAINTENANCE_BYPASS_SESSION_KEY)),
+                "maintenance_enabled": bool(payload.get("enabled")),
+                "maintenance_url": reverse("maintenance_page"),
+                "next": next_url,
+            }
+        )
+    return redirect(next_url)
+
+
 def _serialize_session(session):
-    """Serialize in-memory import session with pulls to export JSON."""
-    pulls = list((session or {}).get("pulls") or [])
+    """Serialize import session (in-memory dict or DB model) to export JSON."""
+    if hasattr(session, "pulls"):
+        pulls = []
+        for pull in session.pulls.order_by("gacha_ts", "seq_id", "id"):
+            pool_id = str(pull.pool_id or "")
+            source_pool_type = str(pull.source_pool_type or "")
+            pool_hint = pool_id.lower()
+            source_hint = source_pool_type.lower()
+            inferred_item_type = "weapon" if ("weapon" in source_hint or "weapon" in pool_hint or "wepon" in pool_hint) else "character"
+            pulls.append(
+                {
+                    "pool_id": pool_id,
+                    "pool_name": str(pull.pool_name or ""),
+                    "char_id": str(pull.char_id or ""),
+                    "char_name": str(pull.char_name or ""),
+                    "rarity": int(pull.rarity or 0),
+                    "is_free": bool(pull.is_free),
+                    "is_new": bool(pull.is_new),
+                    "gacha_ts": int(pull.gacha_ts or 0) or None,
+                    "seq_id": int(pull.seq_id or 0),
+                    "source_pool_type": source_pool_type,
+                    "item_type": inferred_item_type,
+                }
+            )
+
+        return {
+            "source_session_id": int(session.id),
+            "created_at": session.created_at.isoformat() if getattr(session, "created_at", None) else "",
+            "server_id": str(session.server_id or ""),
+            "lang": str(session.lang or ""),
+            "status": str(session.status or ""),
+            "error": str(session.error or ""),
+            "pulls": pulls,
+        }
+
+    payload = session if isinstance(session, dict) else {}
+    pulls = list(payload.get("pulls") or [])
     return {
-        "source_session_id": (session or {}).get("id"),
-        "created_at": (session or {}).get("created_at"),
-        "server_id": (session or {}).get("server_id"),
-        "lang": (session or {}).get("lang"),
-        "status": (session or {}).get("status"),
-        "error": (session or {}).get("error"),
+        "source_session_id": payload.get("id"),
+        "created_at": payload.get("created_at"),
+        "server_id": payload.get("server_id"),
+        "lang": payload.get("lang"),
+        "status": payload.get("status"),
+        "error": payload.get("error"),
         "pulls": pulls,
     }
 
@@ -985,17 +1831,20 @@ def _build_session_payloads(payload):
     return None
 
 
-def _import_history_payload(payload):
-    """Validate history payload shape and return counters without writing DB."""
+def _import_history_payload(payload, *, persist: bool = False):
+    """Validate history payload shape and optionally persist sessions/pulls to DB."""
     if not isinstance(payload, dict):
         raise ValueError("view.error.bad_payload")
 
     sessions_payload = _build_session_payloads(payload)
     if sessions_payload is None:
         raise ValueError("view.error.bad_format")
+    if len(sessions_payload) > MAX_HISTORY_SESSIONS:
+        raise ValueError("view.error.bad_format")
 
     imported_sessions = 0
     imported_pulls = 0
+    prepared_sessions = []
     for session_payload in sessions_payload:
         if not isinstance(session_payload, dict):
             continue
@@ -1003,8 +1852,62 @@ def _import_history_payload(payload):
         pulls_payload = session_payload.get("pulls")
         if not isinstance(pulls_payload, list):
             pulls_payload = session_payload.get("items")
+        normalized_pulls = []
         if isinstance(pulls_payload, list):
-            imported_pulls += sum(1 for item in pulls_payload if isinstance(item, dict))
+            if len(pulls_payload) > MAX_HISTORY_PULLS_PER_SESSION:
+                raise ValueError("view.error.bad_format")
+            for item in pulls_payload:
+                if not isinstance(item, dict):
+                    continue
+                normalized = _normalize_pull_item(item)
+                normalized["_raw"] = dict(item)
+                normalized_pulls.append(normalized)
+            imported_pulls += len(normalized_pulls)
+            if imported_pulls > MAX_HISTORY_TOTAL_PULLS:
+                raise ValueError("view.error.bad_format")
+        prepared_sessions.append((session_payload, normalized_pulls))
+
+    if persist and prepared_sessions:
+        for session_payload, normalized_pulls in prepared_sessions:
+            session_row = ImportSession.objects.create(
+                page_url=str(session_payload.get("page_url") or ""),
+                token=str(session_payload.get("token") or ""),
+                server_id=str(session_payload.get("server_id") or "3"),
+                lang=str(session_payload.get("lang") or "ru-ru"),
+                status=str(session_payload.get("status") or "done"),
+                error=str(session_payload.get("error") or ""),
+            )
+
+            created_at_raw = str(session_payload.get("created_at") or "").strip()
+            if created_at_raw:
+                try:
+                    parsed_created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+                    if parsed_created_at.tzinfo is None:
+                        parsed_created_at = parsed_created_at.replace(tzinfo=timezone.utc)
+                    ImportSession.objects.filter(pk=session_row.pk).update(created_at=parsed_created_at)
+                except Exception:
+                    pass
+
+            pull_rows = []
+            for item in normalized_pulls:
+                pull_rows.append(
+                    Pull(
+                        session=session_row,
+                        pool_id=str(item.get("pool_id") or ""),
+                        pool_name=str(item.get("pool_name") or ""),
+                        char_id=str(item.get("char_id") or ""),
+                        char_name=str(item.get("char_name") or ""),
+                        rarity=_to_int(item.get("rarity"), default=0),
+                        is_free=_to_bool(item.get("is_free")),
+                        is_new=_to_bool(item.get("is_new")),
+                        gacha_ts=_to_int(item.get("gacha_ts"), default=0) or None,
+                        seq_id=_to_int(item.get("seq_id"), default=0),
+                        source_pool_type=str(item.get("source_pool_type") or ""),
+                        raw=item.get("_raw") if isinstance(item.get("_raw"), dict) else {},
+                    )
+                )
+            if pull_rows:
+                Pull.objects.bulk_create(pull_rows, batch_size=1000)
 
     return imported_sessions, imported_pulls
 
@@ -1017,11 +1920,18 @@ def import_history(request):
     uploaded_file = request.FILES.get("history_file")
     if not uploaded_file:
         return _render_settings(request, _tr(request, "view.settings.select_json"), "error")
+    if int(getattr(uploaded_file, "size", 0) or 0) > MAX_HISTORY_FILE_BYTES:
+        return _render_settings(
+            request,
+            _tr(request, "view.settings.import_failed"),
+            "error",
+            "history file is too large",
+        )
 
     try:
         raw_payload = uploaded_file.read().decode("utf-8")
         payload = json.loads(raw_payload)
-        imported_sessions, imported_pulls = _import_history_payload(payload)
+        imported_sessions, imported_pulls = _import_history_payload(payload, persist=True)
     except UnicodeDecodeError:
         return _render_settings(request, _tr(request, "view.settings.utf8"), "error")
     except json.JSONDecodeError:
@@ -1198,6 +2108,8 @@ def cloud_import(request):
     remote_ref = (request.POST.get("remote_ref") or "").strip()
     if not provider:
         return _render_settings(request, _tr(request, "view.cloud.choose_import_source"), "error")
+    if len(remote_ref) > MAX_PAGE_URL_LENGTH:
+        return _render_settings(request, _tr(request, "view.cloud.import_failed"), "error", "remote_ref is too long")
 
     try:
         if provider == "url":
@@ -1208,7 +2120,7 @@ def cloud_import(request):
             access_token = _ensure_cloud_access_token(request, provider)
             payload = import_payload_from_cloud(provider=provider, token=access_token, remote_ref="")
 
-        imported_sessions, imported_pulls = _import_history_payload(payload)
+        imported_sessions, imported_pulls = _import_history_payload(payload, persist=True)
     except CloudIntegrationError as exc:
         return _render_settings(request, _tr(request, "view.cloud.import_failed"), "error", str(exc))
     except ValueError as exc:
@@ -1221,12 +2133,78 @@ def cloud_import(request):
 
 
 def _parse_json_body(request):
-    """Parse request body as JSON object."""
+    """Parse request body as JSON object with size/content-type checks."""
+    content_type = str(request.META.get("CONTENT_TYPE") or "").split(";", 1)[0].strip().lower()
+    if content_type not in {"application/json", "text/json"} and not content_type.endswith("+json"):
+        return None
+
+    content_length_raw = str(request.META.get("CONTENT_LENGTH") or "").strip()
+    if content_length_raw:
+        try:
+            content_length = int(content_length_raw)
+        except (TypeError, ValueError):
+            return None
+        if content_length < 0 or content_length > MAX_JSON_BODY_BYTES:
+            return None
+
     try:
-        payload = json.loads(request.body.decode("utf-8"))
+        raw_body = request.body or b""
+    except Exception:
+        return None
+    if len(raw_body) > MAX_JSON_BODY_BYTES:
+        return None
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _is_valid_page_url(value: str) -> bool:
+    if not value:
+        return True
+    if len(value) > MAX_PAGE_URL_LENGTH:
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _is_valid_token(value: str) -> bool:
+    token = str(value or "").strip()
+    return bool(token and len(token) <= MAX_TOKEN_LENGTH and TOKEN_RE.fullmatch(token))
+
+
+def _is_valid_server_id(value: str) -> bool:
+    server_id = str(value or "").strip()
+    return bool(server_id and len(server_id) <= MAX_SERVER_ID_LENGTH and SERVER_ID_RE.fullmatch(server_id))
+
+
+def _is_valid_remote_lang(value: str) -> bool:
+    lang = str(value or "").strip().lower()
+    return bool(lang and len(lang) <= 32 and LANG_RE.fullmatch(lang))
+
+
+def _is_valid_pool_id(value: str) -> bool:
+    pool_id = str(value or "").strip()
+    if not pool_id:
+        return True
+    return bool(POOL_ID_RE.fullmatch(pool_id))
+
+
+def _request_client_ip(request) -> str:
+    """Get best-effort client IP for Turnstile verification."""
+    forwarded = str(request.META.get("HTTP_X_FORWARDED_FOR") or "").strip()
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return str(request.META.get("REMOTE_ADDR") or "").strip()
+
+
+def _json_size_bytes(payload) -> int:
+    try:
+        return len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    except Exception:
+        return MAX_HISTORY_FILE_BYTES + 1
 
 
 def _connected_sync_providers(request):
@@ -1256,10 +2234,12 @@ def cloud_auto_import_api(request):
 
     body = _parse_json_body(request)
     if body is None:
-        return HttpResponseBadRequest("bad json")
+        return JsonResponse({"ok": False, "error": "bad json"}, status=400)
 
     provider = str(body.get("provider") or "").strip().lower()
     remote_ref = str(body.get("remote_ref") or "").strip()
+    if len(remote_ref) > MAX_PAGE_URL_LENGTH:
+        return JsonResponse({"ok": False, "error": "remote_ref is too long"}, status=400)
     if provider != "url" and not _is_sync_provider(provider):
         return JsonResponse({"ok": False, "error": _tr(request, "view.cloud.choose_sync_provider")}, status=400)
 
@@ -1297,7 +2277,7 @@ def cloud_auto_export_api(request):
 
     body = _parse_json_body(request)
     if body is None:
-        return HttpResponseBadRequest("bad json")
+        return JsonResponse({"ok": False, "error": "bad json"}, status=400)
 
     provider = str(body.get("provider") or "").strip().lower()
     payload = body.get("payload")
@@ -1305,6 +2285,8 @@ def cloud_auto_export_api(request):
         return JsonResponse({"ok": False, "error": _tr(request, "view.cloud.choose_sync_provider")}, status=400)
     if not isinstance(payload, dict):
         return JsonResponse({"ok": False, "error": _tr(request, "view.error.bad_payload")}, status=400)
+    if _json_size_bytes(payload) > MAX_HISTORY_FILE_BYTES:
+        return JsonResponse({"ok": False, "error": "payload too large"}, status=400)
 
     try:
         access_token = _ensure_cloud_access_token(request, provider)
@@ -1328,66 +2310,43 @@ def _default_form_data():
 
 def _set_progress(session_id: int, *, status=None, progress=None, message=None, error=None):
     """Update in-memory progress state for async import session."""
-    with IMPORT_PROGRESS_LOCK:
-        state = IMPORT_PROGRESS.get(session_id, {})
-        if status is not None:
-            state["status"] = status
-        if progress is not None:
-            state["progress"] = max(0, min(100, int(progress)))
-        if message is not None:
-            state["message"] = message
-        if error is not None:
-            state["error"] = error
-        IMPORT_PROGRESS[session_id] = state
+    set_progress(
+        session_id,
+        status=status,
+        progress=progress,
+        message=message,
+        error=error,
+    )
 
 
 def _get_progress(session_id: int):
     """Read in-memory progress state for async import session."""
-    with IMPORT_PROGRESS_LOCK:
-        state = IMPORT_PROGRESS.get(session_id, {})
-        return {
-            "status": state.get("status"),
-            "progress": state.get("progress"),
-            "message": state.get("message"),
-            "error": state.get("error", ""),
-        }
+    return get_progress(session_id)
 
 
 def _next_import_session_id():
     """Generate process-local import session id."""
-    global IMPORT_SESSION_COUNTER
-    with IMPORT_PROGRESS_LOCK:
-        IMPORT_SESSION_COUNTER += 1
-        return IMPORT_SESSION_COUNTER
+    return next_import_session_id()
 
 
 def _set_import_session(session_id: int, **updates):
     """Upsert in-memory import session payload."""
-    with IMPORT_PROGRESS_LOCK:
-        session = IMPORT_SESSIONS.get(session_id, {})
-        session.update(updates)
-        IMPORT_SESSIONS[session_id] = session
-        return deepcopy(session)
+    return upsert_import_session(session_id, **updates)
 
 
 def _get_import_session(session_id: int):
     """Read in-memory import session payload."""
-    with IMPORT_PROGRESS_LOCK:
-        session = IMPORT_SESSIONS.get(session_id)
-        return deepcopy(session) if session else None
+    return get_import_session(session_id)
 
 
 def _all_import_sessions():
     """Return all in-memory import sessions sorted by created_at desc."""
-    with IMPORT_PROGRESS_LOCK:
-        sessions = [deepcopy(value) for value in IMPORT_SESSIONS.values()]
-    return sorted(sessions, key=lambda value: str(value.get("created_at") or ""), reverse=True)
+    return all_import_sessions()
 
 
 def _latest_import_session():
     """Return latest in-memory import session."""
-    sessions = _all_import_sessions()
-    return sessions[0] if sessions else None
+    return latest_import_session()
 
 
 def _normalize_pull_item(item):
@@ -1555,6 +2514,11 @@ def _run_import_session(session_id: int, ui_language: str):
                 message=f"{_tr_lang(ui_language, 'import.error.processing')} {total}/{total}.",
             )
 
+        _save_version_top_stats_snapshot(
+            source_session_id=session_id,
+            pulls=pulls,
+        )
+
         _set_import_session(
             session_id,
             status="done",
@@ -1598,15 +2562,25 @@ def create_session(request):
     if request.method != "POST":
         return HttpResponseBadRequest("POST only")
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
+    payload = _parse_json_body(request)
+    if payload is None:
         return HttpResponseBadRequest("bad json")
+
+    if is_turnstile_enabled():
+        turnstile_token = str(
+            payload.get("turnstile_token")
+            or payload.get("cf_turnstile_response")
+            or ""
+        ).strip()
+        if not turnstile_token:
+            return HttpResponseBadRequest("turnstile required")
+        if not verify_turnstile_token(turnstile_token, remote_ip=_request_client_ip(request)):
+            return HttpResponseBadRequest("turnstile failed")
 
     token = (payload.get("token") or "").strip()
     server_id = str(payload.get("server_id") or "").strip()
     page_url = (payload.get("page_url") or "").strip()
-    lang = (payload.get("lang") or "ru-ru").strip()
+    lang = (payload.get("lang") or "ru-ru").strip().lower()
     import_kind = str(payload.get("import_kind") or "").strip().lower()
     selected_pool_id = ""
     parsed_url = _parse_page_url_details(page_url) if page_url else {}
@@ -1620,13 +2594,23 @@ def create_session(request):
         token = token or parsed_url.get("token", "")
         server_id = server_id or parsed_url.get("server_id", "")
         if not payload.get("lang"):
-            lang = parsed_url.get("lang", "ru-ru")
+            lang = str(parsed_url.get("lang", "ru-ru") or "ru-ru").strip().lower()
 
     if import_kind not in {"character", "weapon"}:
         import_kind = "character"
+    if not _is_valid_page_url(page_url):
+        return HttpResponseBadRequest("invalid page_url")
+    if not _is_valid_pool_id(selected_pool_id):
+        return HttpResponseBadRequest("invalid pool_id")
+    if not _is_valid_remote_lang(lang):
+        return HttpResponseBadRequest("invalid lang")
 
     if not token or not server_id:
         return HttpResponseBadRequest("missing token/server_id")
+    if not _is_valid_token(token):
+        return HttpResponseBadRequest("invalid token")
+    if not _is_valid_server_id(server_id):
+        return HttpResponseBadRequest("invalid server_id")
 
     session_id = _next_import_session_id()
     session = _set_import_session(

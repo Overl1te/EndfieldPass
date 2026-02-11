@@ -1,0 +1,467 @@
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes chartDraw {
+    from {
+        opacity: 0.2;
+        stroke-dasharray: 1800;
+        stroke-dashoffset: 1800;
+    }
+    to {
+        opacity: 1;
+        stroke-dasharray: 1800;
+        stroke-dashoffset: 0;
+    }
+}
+
+@media (max-width: 1400px) {
+    .layout {
+        grid-template-columns: 232px 1fr;
+    }
+
+    .content {
+        padding: 24px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .layout {
+        grid-template-columns: 220px 1fr;
+    }
+
+    .page-header h1 {
+        font-size: clamp(32px, 4.2vw, 50px);
+    }
+
+    .dashboard-grid {
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+        gap: 20px 22px;
+    }
+
+    .characters-grid,
+    .weapons-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1024px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+        z-index: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        padding: 12px;
+        gap: 14px;
+        display: block;
+        background: linear-gradient(180deg, #0d1118 0%, #090b10 100%);
+    }
+
+    .brand {
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+
+    .brand-link {
+        width: 44px;
+    }
+
+    .brand-sub {
+        font-size: 16px;
+    }
+
+    .brand-main {
+        font-size: 30px;
+    }
+
+    .menu {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        align-content: start;
+    }
+
+    .menu-item {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        white-space: normal;
+        font-size: 13px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        text-align: center;
+        min-height: 36px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(240, 194, 67, 0.2);
+        color: #d9d4c1;
+    }
+
+    .sidebar-footer {
+        margin-top: 0;
+        padding-top: 8px;
+    }
+
+    .language-form {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+    }
+
+    .language-label {
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    .language-form select {
+        max-width: none;
+    }
+
+    .content {
+        padding: 14px 12px;
+        gap: 14px;
+    }
+
+    .page-header {
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .header-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .header-actions .btn {
+        min-height: 40px;
+        font-size: 14px;
+        line-height: 1.2;
+        padding: 9px 10px;
+        justify-content: center;
+    }
+
+    .header-actions .btn-outline {
+        color: #ffd778;
+    }
+
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+        gap: 16px;
+    }
+
+    .wish-card h2,
+    .panel h2 {
+        font-size: clamp(22px, 2.4vw, 28px);
+    }
+
+    .wish-card--history {
+        min-height: 0;
+    }
+
+    .wish-card--history .stat-row {
+        min-height: 80px;
+    }
+
+    .value {
+        font-size: 34px;
+    }
+
+    .legendary-strip {
+        gap: 10px;
+        padding: 10px 12px;
+    }
+
+    .legendary-chip {
+        width: 58px;
+        height: 58px;
+    }
+
+    .legendary-chip-pity {
+        min-width: 22px;
+        height: 18px;
+        padding: 0 5px;
+        font-size: 11px;
+    }
+
+    .dashboard-chart-card {
+        min-height: 420px;
+    }
+
+    .dashboard-chart-wrap {
+        min-height: 270px;
+    }
+
+    .dashboard-chart-scroller,
+    .dashboard-chart-svg {
+        min-height: 248px;
+    }
+
+    .import-hero {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 16px;
+    }
+
+    .hero-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        font-size: 20px;
+    }
+
+    .import-hero h2 {
+        font-size: clamp(24px, 4.4vw, 30px);
+    }
+
+    .import-script-wrap {
+        flex-direction: column;
+    }
+
+    .script-copy-btn {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .platform-switch {
+        flex-wrap: wrap;
+    }
+
+    .platform-btn {
+        white-space: normal;
+        text-align: center;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-grid,
+    .settings-cloud-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .characters-grid,
+    .weapons-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .character-topline {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .character-status {
+        margin-left: auto;
+    }
+
+    .site-footer {
+        padding: 11px 12px;
+        align-items: flex-start;
+    }
+
+    .site-footer-meta {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .site-footer-links {
+        width: 100%;
+        font-size: 13px;
+    }
+
+    .cookie-banner {
+        right: 10px;
+        left: 10px;
+        bottom: 10px;
+        width: auto;
+    }
+}
+
+@media (max-width: 760px) {
+    .brand-link {
+        width: 38px;
+    }
+
+    .brand-sub {
+        font-size: 14px;
+    }
+
+    .brand-main {
+        font-size: 24px;
+    }
+
+    .page-header h1 {
+        font-size: clamp(30px, 8.6vw, 42px);
+    }
+
+    .menu {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .menu-item {
+        min-height: 34px;
+        font-size: 12px;
+        padding: 7px 8px;
+    }
+
+    .language-form {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .header-actions {
+        display: none;
+    }
+
+    .header-actions .btn {
+        width: 100%;
+        min-height: 42px;
+        font-size: 15px;
+    }
+
+    .legendary-strip-shell {
+        gap: 6px;
+    }
+
+    .legendary-strip-nav {
+        width: 30px;
+        height: 30px;
+        font-size: 20px;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .label {
+        font-size: 16px;
+    }
+
+    .value {
+        font-size: 30px;
+    }
+
+    .history-table th,
+    .history-table td {
+        font-size: 12px;
+        padding: 9px 8px;
+    }
+
+    .history-free-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+    }
+
+    .legendary-chip::after {
+        font-size: 11px;
+        max-width: 78vw;
+        white-space: normal;
+        text-align: center;
+    }
+
+    .dashboard-chart-toolbar {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .chart-zoom-value {
+        margin-left: auto;
+    }
+
+    .characters-grid,
+    .weapons-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .character-card {
+        min-height: 240px;
+    }
+
+    .table-wrap table {
+        min-width: 640px;
+    }
+
+    .cookie-banner {
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+    }
+}
+
+@media (max-width: 560px) {
+    .content {
+        padding: 14px 10px 12px;
+    }
+
+    .sidebar {
+        padding: 10px;
+    }
+
+    .brand {
+        gap: 8px;
+    }
+
+    .menu-item {
+        min-height: 32px;
+        padding: 7px 8px;
+        font-size: 12px;
+    }
+
+    .characters-grid,
+    .weapons-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .character-card,
+    .weapon-card {
+        min-height: 0;
+    }
+
+    .history-table th:first-child,
+    .history-table td:first-child {
+        width: 58%;
+    }
+
+    .history-table th:nth-child(2),
+    .history-table td:nth-child(2) {
+        width: 28%;
+    }
+
+    .history-table td:last-child,
+    .history-table th:last-child {
+        width: 14%;
+    }
+
+    .history-table tbody tr[data-rarity] td:first-child {
+        grid-template-columns: minmax(64px, 1fr) auto;
+        gap: 6px;
+    }
+
+    .platform-btn,
+    .mode-btn {
+        font-size: 13px;
+        padding: 8px 10px;
+    }
+
+    .import-guide ol {
+        padding-left: 18px;
+    }
+}
+

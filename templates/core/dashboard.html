@@ -21,7 +21,11 @@
     <div class="wish-card-header">
         <h2>6&#9733; {% t "characters.title" %}</h2>
     </div>
-    <div class="legendary-strip" data-legendary-list></div>
+    <div class="legendary-strip-shell" data-legendary-shell>
+        <button type="button" class="legendary-strip-nav legendary-strip-nav--prev" data-legendary-prev aria-label="Scroll left" hidden>&lsaquo;</button>
+        <div class="legendary-strip" data-legendary-list></div>
+        <button type="button" class="legendary-strip-nav legendary-strip-nav--next" data-legendary-next aria-label="Scroll right" hidden>&rsaquo;</button>
+    </div>
 </section>
 
 <section class="card-grid dashboard-grid" data-dashboard-grid>
@@ -167,6 +171,18 @@
     </article>
     {% endfor %}
 
+    <article class="wish-card wish-card--history special-banner-stats-card" data-special-banner-card hidden>
+        <div class="wish-card-header">
+            <h2>{% t "dashboard.banner_stats.title" %}</h2>
+        </div>
+        <div class="special-banner-stats-meta">
+            <span class="special-banner-stats-version" data-special-banner-version></span>
+        </div>
+        <p class="special-banner-stats-empty" data-special-banner-empty>{% t "dashboard.banner_stats.empty" %}</p>
+        <div class="special-banner-stats-list" data-special-banner-list></div>
+        <div class="special-banner-stats-summary" data-special-banner-summary hidden></div>
+    </article>
+
     <article class="wish-card dashboard-chart-card" data-date-chart-card>
         <div class="wish-card-header">
             <h2>{% t "dashboard.chart.title" %}</h2>
@@ -196,6 +212,7 @@
 
 {{ character_icon_refs|json_script:"dashboard-character-icon-refs" }}
 {{ weapon_name_refs|json_script:"dashboard-weapon-name-refs" }}
+{{ version_top_stats|json_script:"dashboard-version-top-stats" }}
 
 <script>
 (() => {
@@ -214,6 +231,11 @@
     const emergencyRecruitmentLabel = "{% t 'dashboard.emergency_recruitment' %}";
     const chartAriaLabel = "{% t 'dashboard.chart.aria' %}";
     const unknownNameLabel = "{% t 'characters.unknown_name' %}";
+    const bannerStatsEmptyLabel = "{% t 'dashboard.banner_stats.empty' %}";
+    const bannerStatsVersionTemplate = "{% t 'dashboard.banner_stats.version' version='__VERSION__' %}";
+    const bannerStatsVersionUnknownLabel = "{% t 'dashboard.banner_stats.version_unknown' %}";
+    const bannerStatsTotalCountLabel = "{% t 'dashboard.banner_stats.total_count_label' %}";
+    const bannerStatsCurrentCountLabel = "{% t 'dashboard.banner_stats.current_banner_count_label' %}";
     const characterIconBase = "{% static 'img/characters/' %}";
     const weaponLegendaryIconBase = "{% static 'img/weapons/6/' %}";
     const weaponPermanentPoolDefs = [
@@ -479,6 +501,17 @@
         }
     };
 
+    const parseVersionTopStats = () => {
+        const payloadNode = document.getElementById("dashboard-version-top-stats");
+        if (!payloadNode) return {};
+        try {
+            const parsed = JSON.parse(payloadNode.textContent || "{}");
+            return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (_) {
+            return {};
+        }
+    };
+
     const buildCharacterIconMap = (refs) => {
         const iconMap = new Map();
         refs.forEach((ref) => {
@@ -510,6 +543,7 @@
     };
 
     const characterIconRefs = parseCharacterIconRefs();
+    const versionTopStats = parseVersionTopStats();
     const characterIconMap = buildCharacterIconMap(characterIconRefs);
     const characterNameMap = buildCharacterNameMap(characterIconRefs);
 
@@ -593,6 +627,50 @@
         return "is-low";
     };
 
+    const syncLegendaryScroller = (card) => {
+        if (!card) return;
+        const strip = card.querySelector("[data-legendary-list]");
+        const prevButton = card.querySelector("[data-legendary-prev]");
+        const nextButton = card.querySelector("[data-legendary-next]");
+        if (!strip || !prevButton || !nextButton) return;
+
+        if (!card.__legendaryScrollerBound) {
+            const updateControls = () => {
+                const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+                const hasOverflow = maxScrollLeft > 8;
+                card.classList.toggle("is-scrollable", hasOverflow);
+
+                prevButton.hidden = !hasOverflow;
+                nextButton.hidden = !hasOverflow;
+                if (!hasOverflow) {
+                    prevButton.disabled = true;
+                    nextButton.disabled = true;
+                    return;
+                }
+
+                prevButton.disabled = strip.scrollLeft <= 4;
+                nextButton.disabled = strip.scrollLeft >= (maxScrollLeft - 4);
+            };
+
+            const scrollByStep = (direction) => {
+                const step = Math.max(220, Math.round(strip.clientWidth * 0.72));
+                strip.scrollBy({ left: direction * step, behavior: "smooth" });
+            };
+
+            prevButton.addEventListener("click", () => scrollByStep(-1));
+            nextButton.addEventListener("click", () => scrollByStep(1));
+            strip.addEventListener("scroll", () => window.requestAnimationFrame(updateControls), { passive: true });
+            window.addEventListener("resize", () => window.requestAnimationFrame(updateControls));
+
+            card.__legendaryScrollerBound = true;
+            card.__legendaryScrollerUpdate = updateControls;
+        }
+
+        if (typeof card.__legendaryScrollerUpdate === "function") {
+            window.requestAnimationFrame(card.__legendaryScrollerUpdate);
+        }
+    };
+
     const renderLegendaryDrops = (card, pulls, poolCategoryHints) => {
         if (!card) return 0;
         const listNode = card.querySelector("[data-legendary-list]");
@@ -672,9 +750,118 @@
                 </article>
             `;
         }).join("");
+        listNode.scrollLeft = 0;
+        syncLegendaryScroller(card);
 
         card.hidden = false;
         return drops.length;
+    };
+
+    const renderSpecialBannerStats = (card, pulls) => {
+        if (!card) return 0;
+        const listNode = card.querySelector("[data-special-banner-list]");
+        const emptyNode = card.querySelector("[data-special-banner-empty]");
+        const versionNode = card.querySelector("[data-special-banner-version]");
+        const summaryNode = card.querySelector("[data-special-banner-summary]");
+        if (!listNode || !emptyNode || !versionNode || !summaryNode) return 0;
+
+        const versionLabel = String(versionTopStats?.version_label || "").trim();
+        versionNode.textContent = versionLabel
+            ? bannerStatsVersionTemplate.replace("__VERSION__", versionLabel)
+            : bannerStatsVersionUnknownLabel;
+
+        const activeBannerPoolId = String(versionTopStats?.active_banner_pool_id || "").trim().toLowerCase();
+        const sourcePulls = Array.isArray(pulls) ? pulls : [];
+        const computeCurrentBannerCount = (row) => {
+            const snapshotValue = Number(row?.current_banner_drop_count) || 0;
+            if (!sourcePulls.length) return snapshotValue;
+            if (!activeBannerPoolId) return Number(row?.current_banner_drop_count) || 0;
+            const aliasValues = Array.isArray(row?.aliases) ? row.aliases : [];
+            const keys = new Set(
+                [
+                    row?.characterCode,
+                    row?.name,
+                    ...aliasValues,
+                ]
+                    .map((value) => normalizeCharacterKey(value))
+                    .filter(Boolean)
+            );
+            if (!keys.size) return 0;
+            let counter = 0;
+            sourcePulls.forEach((pull) => {
+                const poolId = String(pull?.pool_id || "").trim().toLowerCase();
+                if (poolId !== activeBannerPoolId) return;
+                if (String(pull?.item_type || "").trim().toLowerCase() === "weapon") return;
+                const pullKeys = [
+                    normalizeCharacterKey(pull?.char_name),
+                    normalizeCharacterKey(pull?.char_id),
+                ].filter(Boolean);
+                if (pullKeys.some((key) => keys.has(key))) {
+                    counter += 1;
+                }
+            });
+            return counter;
+        };
+
+        const rawRows = Array.isArray(versionTopStats?.stats) ? versionTopStats.stats : [];
+        const rows = rawRows.map((row) => ({
+            characterCode: String(row?.character_code || "").trim().toLowerCase(),
+            name: String(row?.character_name || unknownNameLabel).trim(),
+            aliases: Array.isArray(row?.aliases) ? row.aliases : [],
+            iconUrl: String(row?.icon_url || "").trim(),
+            topCount: Number(row?.drop_count) || 0,
+            currentBannerCount: computeCurrentBannerCount(row),
+            progress: Math.max(0, Math.min(100, Number(row?.share_percent) || 0)),
+        }));
+
+        if (!rows.length) {
+            listNode.innerHTML = "";
+            listNode.hidden = true;
+            summaryNode.hidden = true;
+            summaryNode.textContent = "";
+            emptyNode.hidden = false;
+            emptyNode.textContent = bannerStatsEmptyLabel;
+            card.hidden = false;
+            return 0;
+        }
+
+        emptyNode.hidden = true;
+        listNode.hidden = false;
+        summaryNode.hidden = false;
+        const totalTopCount = rows.reduce((total, row) => total + row.topCount, 0);
+        const totalCurrentBannerCount = rows.reduce((total, row) => total + row.currentBannerCount, 0);
+        summaryNode.textContent = `${bannerStatsTotalCountLabel}: ${totalTopCount} • ${bannerStatsCurrentCountLabel}: ${totalCurrentBannerCount}`;
+        listNode.innerHTML = rows.map((row) => {
+            const escapedName = escapeHtml(row.name || unknownNameLabel);
+            const fallbackChar = escapeHtml((row.name || unknownNameLabel).slice(0, 1).toUpperCase() || "?");
+            const iconHtml = row.iconUrl
+                ? `
+                    <img
+                        src="${escapeHtml(row.iconUrl)}"
+                        alt="${escapedName}"
+                        loading="lazy"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"
+                    >
+                    <span class="special-banner-top-fallback">${fallbackChar}</span>
+                `
+                : `<span class="special-banner-top-fallback" style="display:grid;">${fallbackChar}</span>`;
+
+            return `
+                <article class="special-banner-row">
+                    <div class="special-banner-row-head special-banner-row-line">
+                        <span class="special-banner-top-icon">${iconHtml}</span>
+                        <div class="special-banner-row-title"><strong>${escapedName}</strong></div>
+                        <div class="special-banner-progress-track special-banner-progress-track--inline">
+                            <span class="special-banner-progress-value" style="width:${row.progress}%"></span>
+                        </div>
+                        <span class="special-banner-row-percent">${row.progress}%</span>
+                    </div>
+                </article>
+            `;
+        }).join("");
+
+        card.hidden = false;
+        return rows.length;
     };
 
     const pityCounterUntilAny = (rarities, resetValues) => {
@@ -921,7 +1108,7 @@
             if (!point) return "";
             const x = toX(index).toFixed(2);
             const anchor = index === 0 ? "start" : (index === pointCount - 1 ? "end" : "middle");
-            return `<text class="chart-axis-label x" x="${x}" y="${(paddingTop + plotHeight + 24).toFixed(2)}" text-anchor="${anchor}">${formatAxisDateLabel(point.date)}</text>`;
+            return `<text class="chart-axis-label x" x="${x}" y="${(paddingTop + plotHeight + 24).toFixed(2)}" text-anchor="${anchor}">${escapeHtml(formatAxisDateLabel(point.date))}</text>`;
         }).join("");
 
         const totalSeries = buildSeries("total");
@@ -933,7 +1120,7 @@
             .filter(({ point }) => Number(point[key]) > 0)
             .map(({ x, y, point }) => {
                 const details = `${point.date}: ${totalLabel} ${point.total} (${sixLabel} ${point.six}, ${weaponSixLabel} ${point.weaponSix}, ${weaponPullsLabel} ${point.weaponPulls}, ${fiveLabel} ${point.five}, ${fourLabel} ${point.four})`;
-                return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius}"><title>${details}</title></circle>`;
+                return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius}"><title>${escapeHtml(details)}</title></circle>`;
             })
             .join("");
 
@@ -974,7 +1161,7 @@
                         const x = toX(pointIndex).toFixed(2);
                         const y = toY(point.weaponPulls).toFixed(2);
                         const details = `${point.date}: ${weaponSixLabel} ${point.weaponSix}`;
-                        return `<circle cx="${x}" cy="${y}" r="4.4"><title>${details}</title></circle>`;
+                        return `<circle cx="${x}" cy="${y}" r="4.4"><title>${escapeHtml(details)}</title></circle>`;
                     })
                     .join("")}</g>
                 <g class="chart-dots five">${buildDots(fiveSeries, "five", 2.8)}</g>
@@ -1067,12 +1254,19 @@
             touchPinned = isTouchInput;
             activePointIndex = index;
 
+            const safeDay = escapeHtml(formatDayLabel(point.date));
+            const safeTotalLabel = escapeHtml(totalLabel);
+            const safeSixLabel = escapeHtml(sixLabel);
+            const safeWeaponSixLabel = escapeHtml(weaponSixLabel);
+            const safeWeaponPullsLabel = escapeHtml(weaponPullsLabel);
+            const safeFiveLabel = escapeHtml(fiveLabel);
+            const safeFourLabel = escapeHtml(fourLabel);
             tooltipNode.innerHTML = `
-                <strong>${formatDayLabel(point.date)}</strong>
-                <span>${totalLabel}: ${point.total}</span>
-                <span>${sixLabel}: ${point.six} | ${weaponSixLabel}: ${point.weaponSix}</span>
-                <span>${weaponPullsLabel}: ${point.weaponPulls}</span>
-                <span>${fiveLabel}: ${point.five} | ${fourLabel}: ${point.four}</span>
+                <strong>${safeDay}</strong>
+                <span>${safeTotalLabel}: ${point.total}</span>
+                <span>${safeSixLabel}: ${point.six} | ${safeWeaponSixLabel}: ${point.weaponSix}</span>
+                <span>${safeWeaponPullsLabel}: ${point.weaponPulls}</span>
+                <span>${safeFiveLabel}: ${point.five} | ${safeFourLabel}: ${point.four}</span>
             `;
             tooltipNode.hidden = false;
             setTooltipPosition(event);
@@ -1379,7 +1573,7 @@
         if (emptyState) emptyState.hidden = hasHistory;
 
         if (!hasHistory) {
-            historyRowsNode.innerHTML = `<tr><td colspan="3">${emptyText}</td></tr>`;
+            historyRowsNode.innerHTML = `<tr><td colspan="3">${escapeHtml(emptyText)}</td></tr>`;
             return 0;
         }
 
@@ -1502,6 +1696,7 @@
         const gridNode = document.querySelector("[data-dashboard-grid]");
         const emptyNode = document.querySelector("[data-dashboard-empty]");
         const legendaryStripCard = document.querySelector("[data-legendary-strip]");
+        const specialBannerCard = document.querySelector("[data-special-banner-card]");
         const historyCards = document.querySelectorAll("[data-history-card]");
         const dateChart = document.querySelector("[data-date-chart-card]");
 
@@ -1520,6 +1715,7 @@
         if (emptyNode) emptyNode.hidden = hasAnyPulls;
         if (!hasAnyPulls) {
             if (legendaryStripCard) legendaryStripCard.hidden = true;
+            if (specialBannerCard) specialBannerCard.hidden = true;
             historyCards.forEach((card) => {
                 card.hidden = true;
             });
@@ -1528,6 +1724,7 @@
         }
 
         renderLegendaryDrops(legendaryStripCard, pulls, poolCategoryHints);
+        renderSpecialBannerStats(specialBannerCard, pulls);
 
         historyCards.forEach((card) => {
             card.hidden = false;

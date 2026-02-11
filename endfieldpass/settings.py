@@ -63,14 +63,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'core',
+    'core.apps.CoreConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.SecurityHeadersMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'core.middleware.SiteLanguageMiddleware',
+    'core.middleware.MaintenanceModeMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -162,6 +164,14 @@ DJANGO_EXTERNAL_BASE_URL = os.getenv("DJANGO_EXTERNAL_BASE_URL", "").strip().rst
 
 DONATE_URL = os.getenv("DONATE_URL", "https://github.com/sponsors/Overl1te")
 OFFICIAL_REPOSITORY_URL = os.getenv("OFFICIAL_REPOSITORY_URL", "https://github.com/Overl1te/EndfieldPass")
+TURNSTILE_ENABLED = _env_bool("TURNSTILE_ENABLED", default=False)
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_VERIFY_URL = os.getenv(
+    "TURNSTILE_VERIFY_URL",
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+).strip()
+TURNSTILE_TIMEOUT_SECONDS = float(os.getenv("TURNSTILE_TIMEOUT_SECONDS", "5.0"))
 
 if not DEBUG:
     # Typical reverse-proxy production setup (Nginx/Caddy/Traefik + Gunicorn/Uvicorn).

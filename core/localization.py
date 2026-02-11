@@ -6,7 +6,11 @@ The project intentionally uses a code-based translation map instead of Django
 
 from __future__ import annotations
 
+from threading import Lock
+from time import monotonic
 from typing import Dict, List
+
+from django.apps import apps
 
 
 DEFAULT_LANGUAGE = "ru"
@@ -22,6 +26,11 @@ LANGUAGE_OPTIONS: List[Dict[str, str]] = [
 ]
 
 SUPPORTED_LANGUAGES = {item["code"] for item in LANGUAGE_OPTIONS}
+
+_DB_TRANSLATIONS_CACHE: Dict[str, Dict[str, str]] = {}
+_DB_TRANSLATIONS_CACHE_LOADED_AT = 0.0
+_DB_TRANSLATIONS_CACHE_TTL_SECONDS = 60.0
+_DB_TRANSLATIONS_CACHE_LOCK = Lock()
 
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
@@ -65,10 +74,31 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "characters.rarity": "Редкость: {rarity}★",
         "characters.date_unknown": "дата неизвестна",
         "characters.unknown_name": "Неизвестно",
+        "characters.filters.element": "Элемент",
+        "characters.filters.weapon": "Оружие",
+        "characters.filters.role": "Роль",
+        "characters.filters.rarity": "Редкость",
         "weapons.title": "Оружия",
         "weapons.total": "Всего оружий: {count}",
         "weapons.rarity": "Редкость: {rarity}★",
         "weapons.empty": "Иконки оружия не найдены.",
+        "weapons.type_unknown": "Тип не задан",
+        "weapons.filters.type": "Тип оружия",
+        "weapons.filters.rarity": "Редкость",
+        "weapons.modal.close": "Закрыть",
+        "weapons.modal.stars": "Редкость оружия",
+        "weapons.modal.none": "Нет данных",
+        "weapons.modal.description_pending": "Описание пока не заполнено.",
+        "weapons.modal.skill_pending": "Навык заполняется.",
+        "weapons.modal.operators_pending": "Подходящие оперативники будут добавлены.",
+        "weapons.modal.atk.title": "Базовая атака",
+        "weapons.modal.atk.min": "Минимум",
+        "weapons.modal.atk.max": "Максимум",
+        "weapons.modal.skills.title": "Навыки",
+        "weapons.modal.skills.min": "Мин. уровень",
+        "weapons.modal.skills.max": "Макс. уровень",
+        "weapons.modal.skills.full": "Макс + эссенции",
+        "weapons.modal.operators.title": "Подходящие оперативники",
         "character.element.heat": "Тепло",
         "character.element.cryo": "Крио",
         "character.element.electric": "Электричество",
@@ -117,21 +147,27 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "settings.cloud.url.label": "Прямая ссылка на JSON",
         "settings.cloud.url.btn": "Импорт по ссылке",
         "privacy.title": "Политика конфиденциальности",
-        "privacy.updated": "Дата обновления: 09.02.2026",
+        "privacy.updated": "Дата обновления: 11.02.2026",
         "privacy.p1": "EndfieldPass хранит импортированные данные локально в вашей базе и в браузере (настройки формы). Мы не запрашиваем данные аккаунта напрямую, кроме параметров, которые вы самостоятельно вставляете для импорта истории.",
         "privacy.p2": "Какие данные могут обрабатываться:",
         "privacy.i1": "История круток (персонаж, редкость, время, пул и служебные поля импорта).",
         "privacy.i2": "Параметры импорта (server/lang/token), если вы их указываете.",
         "privacy.i3": "Технические настройки интерфейса в localStorage.",
         "privacy.p3": "Передача данных третьим лицам не выполняется в рамках локального использования приложения.",
+        "privacy.p4": "По вопросам поддержки свяжитесь с нами:",
+        "privacy.p5": "EndfieldPass не связана с GRYPHLINE.",
+        "privacy.p6": "Arknights: Endfield, контент и материалы игры являются товарными знаками и принадлежат GRYPHLINE.",
         "cookies.title": "Политика Cookie",
-        "cookies.updated": "Дата обновления: 09.02.2026",
+        "cookies.updated": "Дата обновления: 11.02.2026",
         "cookies.p1": "EndfieldPass использует только технические cookie и локальное хранилище браузера для работы интерфейса.",
         "cookies.p2": "Что используется:",
         "cookies.i1": "Сессионные cookie Django (например, для CSRF и корректной работы форм).",
         "cookies.i2": "localStorage для сохранения пользовательских настроек формы импорта.",
         "cookies.p3": "Маркетинговые и рекламные cookie не используются.",
         "cookies.p4": "Вы можете очистить cookie и localStorage в настройках браузера в любой момент.",
+        "cookies.p5": "По вопросам поддержки свяжитесь с нами:",
+        "cookies.p6": "EndfieldPass не связана с GRYPHLINE.",
+        "cookies.p7": "Arknights: Endfield, контент и материалы игры являются товарными знаками и принадлежат GRYPHLINE.",
         "import.title": "Импорт истории круток",
         "import.hero.title": "Синхронизируйте историю молитв с аккаунтом",
         "import.hero.desc": "Вставьте ссылку на страницу истории, а token/server/lang подтянутся автоматически.",
@@ -269,10 +305,31 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "characters.rarity": "Rarity: {rarity}★",
         "characters.date_unknown": "date unknown",
         "characters.unknown_name": "Unknown",
+        "characters.filters.element": "Element",
+        "characters.filters.weapon": "Weapon",
+        "characters.filters.role": "Role",
+        "characters.filters.rarity": "Rarity",
         "weapons.title": "Weapons",
         "weapons.total": "Total weapons: {count}",
         "weapons.rarity": "Rarity: {rarity}★",
         "weapons.empty": "No weapon icons found.",
+        "weapons.type_unknown": "Type is not set",
+        "weapons.filters.type": "Weapon type",
+        "weapons.filters.rarity": "Rarity",
+        "weapons.modal.close": "Close",
+        "weapons.modal.stars": "Weapon rarity stars",
+        "weapons.modal.none": "No data",
+        "weapons.modal.description_pending": "Description is not filled yet.",
+        "weapons.modal.skill_pending": "Skill data is pending.",
+        "weapons.modal.operators_pending": "Recommended operators will be added.",
+        "weapons.modal.atk.title": "Base ATK",
+        "weapons.modal.atk.min": "Min",
+        "weapons.modal.atk.max": "Max",
+        "weapons.modal.skills.title": "Skills",
+        "weapons.modal.skills.min": "Min level",
+        "weapons.modal.skills.max": "Max level",
+        "weapons.modal.skills.full": "Max + essences",
+        "weapons.modal.operators.title": "Recommended operators",
         "character.element.heat": "Heat",
         "character.element.cryo": "Cryo",
         "character.element.electric": "Electric",
@@ -321,21 +378,27 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "settings.cloud.url.label": "Direct JSON URL",
         "settings.cloud.url.btn": "Import by URL",
         "privacy.title": "Privacy Policy",
-        "privacy.updated": "Updated: February 9, 2026",
+        "privacy.updated": "Updated: February 11, 2026",
         "privacy.p1": "EndfieldPass stores imported data locally in your database and browser (form settings). We do not request account data directly except parameters you provide for history import.",
         "privacy.p2": "What data may be processed:",
         "privacy.i1": "Wish history (character, rarity, time, pool and service import fields).",
         "privacy.i2": "Import parameters (server/lang/token), if you provide them.",
         "privacy.i3": "Technical UI settings in localStorage.",
         "privacy.p3": "No transfer to third parties is performed in local app usage.",
+        "privacy.p4": "For support requests, contact us at:",
+        "privacy.p5": "EndfieldPass is not affiliated with GRYPHLINE.",
+        "privacy.p6": "Arknights: Endfield and all related game content and materials are trademarks and property of GRYPHLINE.",
         "cookies.title": "Cookie Policy",
-        "cookies.updated": "Updated: February 9, 2026",
+        "cookies.updated": "Updated: February 11, 2026",
         "cookies.p1": "EndfieldPass uses only technical cookies and browser local storage for UI functionality.",
         "cookies.p2": "What is used:",
         "cookies.i1": "Django session cookies (for CSRF and form operation).",
         "cookies.i2": "localStorage for import form preferences.",
         "cookies.p3": "No marketing or advertising cookies are used.",
         "cookies.p4": "You can clear cookies and localStorage in browser settings at any time.",
+        "cookies.p5": "For support requests, contact us at:",
+        "cookies.p6": "EndfieldPass is not affiliated with GRYPHLINE.",
+        "cookies.p7": "Arknights: Endfield and all related game content and materials are trademarks and property of GRYPHLINE.",
         "import.title": "Wish History Import",
         "import.hero.title": "Sync your wish history with account",
         "import.hero.desc": "Paste the history page URL, token/server/lang will be parsed automatically.",
@@ -593,6 +656,19 @@ EXTRA_TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "dashboard.chart.zoom_in": "Увеличить график",
         "dashboard.chart.zoom_out": "Уменьшить график",
         "dashboard.chart.aria": "График круток по датам",
+        "dashboard.banner_stats.title": "Топ персонажи по баннерам",
+        "dashboard.banner_stats.empty": "Баннеры не настроены в админке.",
+        "dashboard.banner_stats.version": "Версия {version}",
+        "dashboard.banner_stats.version_unknown": "Версия неизвестна",
+        "dashboard.banner_stats.total": "Всего топов: {total}",
+        "dashboard.banner_stats.top_label": "Топ персонаж",
+        "dashboard.banner_stats.six_label": "6★ персонажи",
+        "dashboard.banner_stats.period": "Период",
+        "dashboard.banner_stats.top_count": "Выбито топа",
+        "dashboard.banner_stats.total_count_label": "Общее количество",
+        "dashboard.banner_stats.current_banner_count_label": "На текущем баннере",
+        "dashboard.banner_stats.no_dates": "даты не указаны",
+        "import.tracked_count.label": "Сколько персонажей считать (1-20)",
         "characters.title_help": "Список показывает персонажей и их потенциал по вашей истории круток.",
         "characters.potential": "Потенциал",
         "import.manual.token": "Токен (u8_token)",
@@ -626,6 +702,17 @@ EXTRA_TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "import.result.table.new": "Новое",
         "import.result.table.ts": "Время",
         "settings.cloud.yandex_unavailable": "Yandex Disk: временно недоступен.",
+        "title.maintenance": "Технические работы",
+        "maintenance.badge": "Технические работы",
+        "maintenance.title": "Идут технические работы",
+        "maintenance.subtitle": "Мы обновляем сервис. Скоро вернемся в онлайн.",
+        "maintenance.launch_prefix": "Время до запуска",
+        "maintenance.launch_unknown": "Точное время запуска скоро появится.",
+        "maintenance.timer.days": "дни",
+        "maintenance.timer.hours": "часы",
+        "maintenance.timer.minutes": "минуты",
+        "maintenance.timer.seconds": "секунды",
+        "maintenance.support_hint": "Если нужна помощь, напишите:",
         "common.ok": "ОК",
     },
     "en": {
@@ -648,6 +735,19 @@ EXTRA_TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "dashboard.chart.zoom_in": "Zoom in chart",
         "dashboard.chart.zoom_out": "Zoom out chart",
         "dashboard.chart.aria": "Pull history chart by date",
+        "dashboard.banner_stats.title": "Top Characters By Banner",
+        "dashboard.banner_stats.empty": "No banners configured in admin panel.",
+        "dashboard.banner_stats.version": "Version {version}",
+        "dashboard.banner_stats.version_unknown": "Version unknown",
+        "dashboard.banner_stats.total": "Total top drops: {total}",
+        "dashboard.banner_stats.top_label": "Top character",
+        "dashboard.banner_stats.six_label": "6★ characters",
+        "dashboard.banner_stats.period": "Period",
+        "dashboard.banner_stats.top_count": "Top drops",
+        "dashboard.banner_stats.total_count_label": "Total count",
+        "dashboard.banner_stats.current_banner_count_label": "Current banner",
+        "dashboard.banner_stats.no_dates": "dates not specified",
+        "import.tracked_count.label": "How many characters to track (1-20)",
         "characters.title_help": "Shows characters and their potential from your pull history.",
         "characters.potential": "Potential",
         "import.manual.token": "Token (u8_token)",
@@ -681,6 +781,17 @@ EXTRA_TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "import.result.table.new": "New",
         "import.result.table.ts": "Time",
         "settings.cloud.yandex_unavailable": "Yandex Disk: temporarily unavailable.",
+        "title.maintenance": "Maintenance",
+        "maintenance.badge": "Maintenance",
+        "maintenance.title": "Maintenance in progress",
+        "maintenance.subtitle": "We are updating the service and will be back online soon.",
+        "maintenance.launch_prefix": "Time until launch",
+        "maintenance.launch_unknown": "Launch time will be published soon.",
+        "maintenance.timer.days": "days",
+        "maintenance.timer.hours": "hours",
+        "maintenance.timer.minutes": "minutes",
+        "maintenance.timer.seconds": "seconds",
+        "maintenance.support_hint": "If you need help, contact:",
         "common.ok": "OK",
     },
     "de": {
@@ -886,6 +997,26 @@ def normalize_language_code(value: str | None) -> str:
     return DEFAULT_LANGUAGE
 
 
+def language_from_path_segment(value: str | None) -> str:
+    """Return language from URL path segment or empty string when not a language."""
+    raw = (value or "").strip().lower().replace("_", "-")
+    if not raw:
+        return ""
+    if raw in SUPPORTED_LANGUAGES:
+        return raw
+    if raw == "zh" or raw.startswith("zh-"):
+        return "zh-hans"
+    if raw == "ja" or raw.startswith("ja-"):
+        return "ja"
+    if raw == "de" or raw.startswith("de-"):
+        return "de"
+    if raw == "en" or raw.startswith("en-"):
+        return "en"
+    if raw == "ru" or raw.startswith("ru-"):
+        return "ru"
+    return ""
+
+
 def _language_from_accept_header(header_value: str | None) -> str:
     """Pick first supported language from Accept-Language header."""
     header = (header_value or "").strip()
@@ -923,10 +1054,65 @@ def get_language_options() -> List[Dict[str, str]]:
     return LANGUAGE_OPTIONS
 
 
+def _load_db_translations_index() -> Dict[str, Dict[str, str]]:
+    """Load localization key index from DB (key -> lang -> text)."""
+    if not apps.ready:
+        return {}
+    try:
+        model = apps.get_model("core", "LocalizationEntry")
+        rows = model.objects.all().only("key", "translations")
+    except Exception:
+        return {}
+
+    payload: Dict[str, Dict[str, str]] = {}
+    for row in rows:
+        key = str(getattr(row, "key", "") or "").strip()
+        if not key:
+            continue
+        raw = getattr(row, "translations", {}) or {}
+        if not isinstance(raw, dict):
+            continue
+        normalized = {}
+        for language, value in raw.items():
+            lang = normalize_language_code(str(language or ""))
+            text = str(value or "")
+            if not text:
+                continue
+            normalized[lang] = text
+        if normalized:
+            payload[key] = normalized
+    return payload
+
+
+def _get_db_translations_index() -> Dict[str, Dict[str, str]]:
+    """Get cached DB localization index with short TTL to avoid frequent queries."""
+    global _DB_TRANSLATIONS_CACHE, _DB_TRANSLATIONS_CACHE_LOADED_AT
+
+    now = monotonic()
+    with _DB_TRANSLATIONS_CACHE_LOCK:
+        if (now - _DB_TRANSLATIONS_CACHE_LOADED_AT) < _DB_TRANSLATIONS_CACHE_TTL_SECONDS:
+            return _DB_TRANSLATIONS_CACHE
+        _DB_TRANSLATIONS_CACHE = _load_db_translations_index()
+        _DB_TRANSLATIONS_CACHE_LOADED_AT = now
+        return _DB_TRANSLATIONS_CACHE
+
+
+def reset_translation_cache() -> None:
+    """Force translation cache refresh on next translate() call."""
+    global _DB_TRANSLATIONS_CACHE, _DB_TRANSLATIONS_CACHE_LOADED_AT
+    with _DB_TRANSLATIONS_CACHE_LOCK:
+        _DB_TRANSLATIONS_CACHE = {}
+        _DB_TRANSLATIONS_CACHE_LOADED_AT = 0.0
+
+
 def translate(language: str, key: str, **kwargs) -> str:
     """Translate key with fallback chain and optional format arguments."""
     normalized = normalize_language_code(language)
+    db_map = _get_db_translations_index()
+    db_value = (db_map.get(str(key or "").strip()) or {}).get(normalized) or (db_map.get(str(key or "").strip()) or {}).get(DEFAULT_LANGUAGE)
     text = (
+        db_value
+        or
         TRANSLATIONS.get(normalized, {}).get(key)
         or TRANSLATIONS[DEFAULT_LANGUAGE].get(key)
         or key

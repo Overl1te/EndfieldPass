@@ -10,10 +10,57 @@
         <span class="weapons-total">{% t "weapons.total" count=weapons|length %}</span>
     </header>
 
+    <div class="catalog-filters" data-weapons-filters>
+        <div class="catalog-filter-group" data-weapon-filter-group="type">
+            <span class="catalog-filter-title">{% t "weapons.filters.type" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="short" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Short-Weapon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.short" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="great" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Great-Weapon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.great" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="guns" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Guns.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.guns" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="polearms" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Polearms.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.polearms" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="orbiters" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Orbiters.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.orbiters" %}</span>
+                </button>
+            </div>
+        </div>
+        <div class="catalog-filter-group" data-weapon-filter-group="rarity">
+            <span class="catalog-filter-title">{% t "weapons.filters.rarity" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="6" aria-pressed="false"><span>6★</span></button>
+                <button type="button" class="catalog-pill" data-filter-value="5" aria-pressed="false"><span>5★</span></button>
+                <button type="button" class="catalog-pill" data-filter-value="4" aria-pressed="false"><span>4★</span></button>
+                <button type="button" class="catalog-pill" data-filter-value="3" aria-pressed="false"><span>3★</span></button>
+            </div>
+        </div>
+    </div>
+
     {% if weapons %}
     <section class="weapons-grid">
         {% for weapon in weapons %}
-        <article class="weapon-card" data-weapon-card>
+        <article
+            class="weapon-card"
+            data-weapon-card
+            data-weapon-index="{{ forloop.counter0 }}"
+            data-weapon-type="{{ weapon.weapon_type }}"
+            data-weapon-rarity="{{ weapon.rarity }}"
+            role="button"
+            tabindex="0"
+        >
             <div class="weapon-avatar weapon-rarity-{{ weapon.rarity }}">
                 <img
                     src="{{ weapon.icon_url }}"
@@ -23,7 +70,13 @@
                 >
                 <span class="weapon-fallback">{{ weapon.name|slice:":1" }}</span>
             </div>
-            <h2>{{ weapon.name }}</h2>
+            <h2 class="weapon-card-name weapon-name-rarity-{{ weapon.rarity }}">{{ weapon.name }}</h2>
+            <span class="weapon-meta weapon-meta-type">
+                {% if weapon.weapon_type_icon_url %}
+                <img src="{{ weapon.weapon_type_icon_url }}" alt="" loading="lazy">
+                {% endif %}
+                {{ weapon.weapon_type_label }}
+            </span>
             <span class="weapon-meta">{% t "weapons.rarity" rarity=weapon.rarity %}</span>
         </article>
         {% endfor %}
@@ -32,4 +85,315 @@
     <p class="weapons-empty">{% t "weapons.empty" %}</p>
     {% endif %}
 </section>
+
+<div class="weapon-modal" id="weaponModal" hidden>
+    <div
+        class="weapon-modal-card"
+        id="weaponModalCard"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="weaponModalName"
+    >
+        <button type="button" class="weapon-modal-close" id="weaponModalClose" aria-label="{% t 'weapons.modal.close' %}">×</button>
+        <img class="weapon-modal-bg-image" id="weaponModalBg" alt="" aria-hidden="true">
+
+        <div class="weapon-modal-content">
+            <header class="weapon-modal-header">
+                <h2 id="weaponModalName" class="weapon-modal-name"></h2>
+                <div class="weapon-modal-meta-row">
+                    <span class="weapon-modal-type" id="weaponModalType">
+                        <img id="weaponModalTypeIcon" alt="" hidden>
+                        <span id="weaponModalTypeLabel"></span>
+                    </span>
+                    <span class="weapon-modal-rarity" id="weaponModalRarityText"></span>
+                    <img class="weapon-modal-stars" id="weaponModalStars" alt="{% t 'weapons.modal.stars' %}" hidden>
+                </div>
+            </header>
+
+            <p class="weapon-modal-description" id="weaponModalDescription"></p>
+
+            <section class="weapon-modal-block">
+                <h3>{% t "weapons.modal.atk.title" %}</h3>
+                <div class="weapon-modal-atk-grid">
+                    <div class="weapon-modal-atk-cell">
+                        <span class="weapon-modal-atk-label">{% t "weapons.modal.atk.min" %}</span>
+                        <strong id="weaponModalAtkMin">0</strong>
+                    </div>
+                    <div class="weapon-modal-atk-cell">
+                        <span class="weapon-modal-atk-label">{% t "weapons.modal.atk.max" %}</span>
+                        <strong id="weaponModalAtkMax">0</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="weapon-modal-block">
+                <h3>{% t "weapons.modal.skills.title" %}</h3>
+                <div class="weapon-modal-skill-grid">
+                    <div class="weapon-modal-skill-col">
+                        <h4>{% t "weapons.modal.skills.min" %}</h4>
+                        <ul id="weaponModalSkillsMin"></ul>
+                    </div>
+                    <div class="weapon-modal-skill-col">
+                        <h4>{% t "weapons.modal.skills.max" %}</h4>
+                        <ul id="weaponModalSkillsMax"></ul>
+                    </div>
+                    <div class="weapon-modal-skill-col">
+                        <h4>{% t "weapons.modal.skills.full" %}</h4>
+                        <ul id="weaponModalSkillsFull"></ul>
+                    </div>
+                </div>
+            </section>
+
+            <section class="weapon-modal-block">
+                <h3>{% t "weapons.modal.operators.title" %}</h3>
+                <ul class="weapon-modal-operators" id="weaponModalOperators"></ul>
+            </section>
+        </div>
+    </div>
+</div>
+
+{{ weapons_payload|json_script:"weaponsCatalogPayload" }}
+<script>
+(() => {
+    const cards = document.querySelectorAll("[data-weapon-card]");
+    const payloadNode = document.getElementById("weaponsCatalogPayload");
+    const modal = document.getElementById("weaponModal");
+    const modalCard = document.getElementById("weaponModalCard");
+    const closeButton = document.getElementById("weaponModalClose");
+    if (!cards.length || !payloadNode || !modal || !modalCard || !closeButton) return;
+
+    let weapons = [];
+    try {
+        const parsed = JSON.parse(payloadNode.textContent || "[]");
+        weapons = Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        weapons = [];
+    }
+    if (!weapons.length) return;
+
+    const i18n = {
+        rarity: "{% t 'weapons.rarity' rarity='__RARITY__' %}",
+        none: "{% t 'weapons.modal.none' %}",
+        total: "{% t 'weapons.total' count='__COUNT__' %}",
+    };
+    const rarityClassNames = ["weapon-name-rarity-3", "weapon-name-rarity-4", "weapon-name-rarity-5", "weapon-name-rarity-6"];
+    const typeFilterGroup = document.querySelector('[data-weapon-filter-group="type"]');
+    const rarityFilterGroup = document.querySelector('[data-weapon-filter-group="rarity"]');
+    const totalNode = document.querySelector(".weapons-total");
+
+    const modalName = document.getElementById("weaponModalName");
+    const modalDescription = document.getElementById("weaponModalDescription");
+    const modalTypeIcon = document.getElementById("weaponModalTypeIcon");
+    const modalTypeLabel = document.getElementById("weaponModalTypeLabel");
+    const modalRarityText = document.getElementById("weaponModalRarityText");
+    const modalStars = document.getElementById("weaponModalStars");
+    const modalBg = document.getElementById("weaponModalBg");
+    const modalAtkMin = document.getElementById("weaponModalAtkMin");
+    const modalAtkMax = document.getElementById("weaponModalAtkMax");
+    const modalSkillsMin = document.getElementById("weaponModalSkillsMin");
+    const modalSkillsMax = document.getElementById("weaponModalSkillsMax");
+    const modalSkillsFull = document.getElementById("weaponModalSkillsFull");
+    const modalOperators = document.getElementById("weaponModalOperators");
+
+    let activeCard = null;
+
+    const applyRarityClass = (node, rarity) => {
+        if (!node) return;
+        rarityClassNames.forEach((className) => node.classList.remove(className));
+        const normalized = Number(rarity);
+        if (normalized >= 3 && normalized <= 6) {
+            node.classList.add(`weapon-name-rarity-${normalized}`);
+        }
+    };
+
+    const fillList = (target, items) => {
+        if (!target) return;
+        target.innerHTML = "";
+        const normalized = Array.isArray(items) ? items.filter((item) => String(item || "").trim()) : [];
+        if (!normalized.length) {
+            const li = document.createElement("li");
+            li.textContent = i18n.none;
+            target.appendChild(li);
+            return;
+        }
+        normalized.forEach((item) => {
+            const li = document.createElement("li");
+            li.textContent = String(item);
+            target.appendChild(li);
+        });
+    };
+
+    const fillOperatorCards = (target, items) => {
+        if (!target) return;
+        target.innerHTML = "";
+        const cards = Array.isArray(items) ? items : [];
+        if (!cards.length) {
+            const li = document.createElement("li");
+            li.textContent = i18n.none;
+            target.appendChild(li);
+            return;
+        }
+
+        cards.forEach((item) => {
+            const li = document.createElement("li");
+            li.className = "weapon-modal-operator-item";
+
+            const avatar = document.createElement("span");
+            avatar.className = "weapon-modal-operator-avatar";
+            avatar.title = String(item?.name || "");
+            avatar.setAttribute("aria-label", String(item?.name || ""));
+
+            const iconUrl = String(item?.icon_url || "").trim();
+            if (iconUrl) {
+                const img = document.createElement("img");
+                img.src = iconUrl;
+                img.alt = String(item?.name || "");
+                img.loading = "lazy";
+                img.onerror = () => {
+                    img.remove();
+                    const fallback = document.createElement("span");
+                    fallback.className = "weapon-modal-operator-fallback";
+                    fallback.textContent = String(item?.fallback || "?");
+                    avatar.appendChild(fallback);
+                };
+                avatar.appendChild(img);
+            } else {
+                const fallback = document.createElement("span");
+                fallback.className = "weapon-modal-operator-fallback";
+                fallback.textContent = String(item?.fallback || "?");
+                avatar.appendChild(fallback);
+            }
+
+            li.appendChild(avatar);
+            target.appendChild(li);
+        });
+    };
+
+    const openModal = (cardIndex, trigger) => {
+        const item = weapons[cardIndex];
+        if (!item) return;
+
+        activeCard = trigger || null;
+        modalName.textContent = String(item.name || "");
+        applyRarityClass(modalName, item.rarity);
+        modalDescription.textContent = String(item.description || i18n.none);
+        modalTypeLabel.textContent = String(item.weapon_type_label || i18n.none);
+        modalRarityText.textContent = i18n.rarity.replace("__RARITY__", String(item.rarity || 0));
+        modalAtkMin.textContent = String(item.atk_min || 0);
+        modalAtkMax.textContent = String(item.atk_max || 0);
+        fillList(modalSkillsMin, item.skills_min);
+        fillList(modalSkillsMax, item.skills_max);
+        fillList(modalSkillsFull, item.skills_full);
+        fillOperatorCards(modalOperators, item.operator_cards);
+
+        if (item.weapon_type_icon_url) {
+            modalTypeIcon.src = String(item.weapon_type_icon_url);
+            modalTypeIcon.hidden = false;
+        } else {
+            modalTypeIcon.hidden = true;
+            modalTypeIcon.removeAttribute("src");
+        }
+
+        if (item.rarity_stars_url) {
+            modalStars.src = String(item.rarity_stars_url);
+            modalStars.hidden = false;
+        } else {
+            modalStars.hidden = true;
+            modalStars.removeAttribute("src");
+        }
+
+        if (item.icon_url) {
+            modalBg.src = String(item.icon_url);
+            modalBg.hidden = false;
+        } else {
+            modalBg.hidden = true;
+            modalBg.removeAttribute("src");
+        }
+
+        modal.hidden = false;
+        document.body.classList.add("modal-open");
+        closeButton.focus();
+    };
+
+    const closeModal = () => {
+        modal.hidden = true;
+        document.body.classList.remove("modal-open");
+        if (activeCard) activeCard.focus();
+    };
+
+    const getActiveGroupValue = (group) => {
+        if (!group) return "all";
+        const active = group.querySelector(".catalog-pill.is-active[data-filter-value]");
+        return String(active?.dataset.filterValue || "all").trim().toLowerCase();
+    };
+
+    const bindFilterGroup = (group, onChange) => {
+        if (!group) return;
+        const buttons = group.querySelectorAll(".catalog-pill[data-filter-value]");
+        buttons.forEach((button) => {
+            button.addEventListener("click", () => {
+                if (button.classList.contains("is-active")) return;
+                buttons.forEach((candidate) => {
+                    candidate.classList.remove("is-active");
+                    candidate.setAttribute("aria-pressed", "false");
+                });
+                button.classList.add("is-active");
+                button.setAttribute("aria-pressed", "true");
+                onChange();
+            });
+        });
+    };
+
+    const applyFilters = () => {
+        const selectedType = getActiveGroupValue(typeFilterGroup);
+        const selectedRarity = getActiveGroupValue(rarityFilterGroup);
+        let visibleCount = 0;
+
+        cards.forEach((card) => {
+            const rawIndex = String(card.dataset.weaponIndex || "").trim();
+            const cardIndex = Number(rawIndex);
+            const item = Number.isInteger(cardIndex) ? weapons[cardIndex] : null;
+            if (!item) {
+                card.hidden = true;
+                return;
+            }
+
+            const typeMatch = selectedType === "all" || String(item.weapon_type || "").toLowerCase() === selectedType;
+            const rarityMatch = selectedRarity === "all" || String(item.rarity || "") === selectedRarity;
+            const isVisible = typeMatch && rarityMatch;
+            card.hidden = !isVisible;
+            if (isVisible) visibleCount += 1;
+        });
+
+        if (totalNode) {
+            totalNode.textContent = i18n.total.replace("__COUNT__", String(visibleCount));
+        }
+    };
+
+    cards.forEach((card) => {
+        const rawIndex = String(card.dataset.weaponIndex || "").trim();
+        const cardIndex = Number(rawIndex);
+        if (!Number.isInteger(cardIndex)) return;
+
+        card.addEventListener("click", () => openModal(cardIndex, card));
+        card.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            openModal(cardIndex, card);
+        });
+    });
+
+    closeButton.addEventListener("click", closeModal);
+    modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) closeModal();
+    });
+
+    bindFilterGroup(typeFilterGroup, applyFilters);
+    bindFilterGroup(rarityFilterGroup, applyFilters);
+    applyFilters();
+})();
+</script>
 {% endblock %}

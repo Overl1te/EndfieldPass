@@ -1,0 +1,278 @@
+{% load i18n_tags static %}
+<!DOCTYPE html>
+<html lang="{{ request.site_language|default:'ru' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% t "title.maintenance" %} | EndfieldPass</title>
+    <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}">
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
+            background: radial-gradient(circle at top, #30384f 0%, #141723 60%, #0b0d16 100%);
+            color: #e9ecf7;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+        .maintenance-card {
+            width: min(760px, 100%);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 18px;
+            background: rgba(18, 21, 34, 0.88);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+            padding: clamp(20px, 4vw, 34px);
+        }
+        .badge {
+            display: inline-block;
+            margin-bottom: 14px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(240, 194, 67, 0.45);
+            color: #f0c243;
+            background: rgba(240, 194, 67, 0.08);
+            font-size: 12px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header img {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        h1 {
+            margin: 0;
+            font-size: clamp(24px, 4vw, 36px);
+            line-height: 1.12;
+        }
+        p {
+            margin: 14px 0 0;
+            color: rgba(235, 239, 249, 0.82);
+            line-height: 1.45;
+            font-size: 16px;
+        }
+        .timer-title {
+            margin-top: 24px;
+            margin-bottom: 10px;
+            color: rgba(236, 240, 249, 0.9);
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .timer-box {
+            display: flex;
+            align-items: stretch;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .timer-item {
+            min-width: 106px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            text-align: center;
+        }
+        .timer-value {
+            font-size: clamp(24px, 4.5vw, 32px);
+            font-weight: 800;
+            color: #ffe393;
+            line-height: 1.05;
+        }
+        .timer-label {
+            margin-top: 5px;
+            font-size: 12px;
+            color: rgba(235, 239, 249, 0.72);
+            text-transform: uppercase;
+        }
+        .hint {
+            margin-top: 22px;
+            font-size: 14px;
+            color: rgba(235, 239, 249, 0.64);
+        }
+        .support-link {
+            color: #ffe393;
+        }
+    </style>
+</head>
+<body
+    data-launch-ms="{{ launch_at_ms }}"
+    data-next-url="{{ maintenance_next_url|escape }}"
+    data-bypass-url="{{ maintenance_bypass_url|escape }}"
+>
+    <section class="maintenance-card" aria-live="polite">
+        <span class="badge">{% t "maintenance.badge" %}</span>
+        <div class="header">
+            <img src="{% static 'img/logo.png' %}" alt="EndfieldPass">
+            <h1>{% t "maintenance.title" %}</h1>
+        </div>
+
+        {% if maintenance_message %}
+        <p>{{ maintenance_message }}</p>
+        {% else %}
+        <p>{% t "maintenance.subtitle" %}</p>
+        {% endif %}
+
+        <div class="timer-title">{% t "maintenance.launch_prefix" %}</div>
+        <div class="timer-box" id="maintenanceTimerBox">
+            <div class="timer-item">
+                <div class="timer-value" id="timerDays">--</div>
+                <div class="timer-label">{% t "maintenance.timer.days" %}</div>
+            </div>
+            <div class="timer-item">
+                <div class="timer-value" id="timerHours">--</div>
+                <div class="timer-label">{% t "maintenance.timer.hours" %}</div>
+            </div>
+            <div class="timer-item">
+                <div class="timer-value" id="timerMinutes">--</div>
+                <div class="timer-label">{% t "maintenance.timer.minutes" %}</div>
+            </div>
+            <div class="timer-item">
+                <div class="timer-value" id="timerSeconds">--</div>
+                <div class="timer-label">{% t "maintenance.timer.seconds" %}</div>
+            </div>
+        </div>
+        <p id="maintenanceFallback" hidden>{% t "maintenance.launch_unknown" %}</p>
+
+        <p class="hint">
+            {% t "maintenance.support_hint" %}
+            <a class="support-link" href="mailto:support@endfieldpass.site">support@endfieldpass.site</a>
+        </p>
+    </section>
+
+    <script>
+    (() => {
+        const root = document.body;
+        const launchAtMs = Number(root.dataset.launchMs || 0);
+        const nextUrl = String(root.dataset.nextUrl || "/");
+        const bypassUrl = String(root.dataset.bypassUrl || "/maintenance/bypass");
+        const maintenancePath = String(window.location.pathname || "/maintenance/");
+        let syncInFlight = false;
+        let lastSyncAt = 0;
+        const fallback = document.getElementById("maintenanceFallback");
+        const ids = {
+            days: document.getElementById("timerDays"),
+            hours: document.getElementById("timerHours"),
+            minutes: document.getElementById("timerMinutes"),
+            seconds: document.getElementById("timerSeconds"),
+        };
+
+        const isTruthy = (value) => {
+            const normalized = String(value || "").trim().toLowerCase();
+            return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+        };
+
+        const hasAdminLocalStorage = () => {
+            try {
+                return isTruthy(localStorage.getItem("admin"));
+            } catch (_) {
+                return false;
+            }
+        };
+
+        const resolveNextTarget = () => {
+            const normalizedNext = String(nextUrl || "").trim();
+            const normalizedMaintenance = maintenancePath.endsWith("/") ? maintenancePath : `${maintenancePath}/`;
+            if (
+                normalizedNext
+                && normalizedNext !== maintenancePath
+                && normalizedNext !== normalizedMaintenance
+                && normalizedNext !== "/maintenance"
+                && normalizedNext !== "/maintenance/"
+            ) {
+                return normalizedNext;
+            }
+            return "/";
+        };
+
+        const syncDisabledState = async (force = false) => {
+            if (!window.fetch) return;
+            const now = Date.now();
+            if (!force) {
+                if (syncInFlight) return;
+                if ((now - lastSyncAt) < 2500) return;
+            }
+            syncInFlight = true;
+            lastSyncAt = now;
+            try {
+                const separator = bypassUrl.includes("?") ? "&" : "?";
+                const target = `${bypassUrl}${separator}json=1&enable=0&next=${encodeURIComponent(maintenancePath)}`;
+                const response = await fetch(target, {
+                    cache: "no-store",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (payload && payload.maintenance_enabled === false) {
+                    window.location.replace(resolveNextTarget());
+                }
+            } catch (_) {
+            } finally {
+                syncInFlight = false;
+            }
+        };
+
+        const maybeBypassMaintenance = () => {
+            if (!hasAdminLocalStorage()) {
+                syncDisabledState(false).catch(() => {});
+                return;
+            }
+            const targetNext = resolveNextTarget();
+            const separator = bypassUrl.includes("?") ? "&" : "?";
+            const target = `${bypassUrl}${separator}enable=1&next=${encodeURIComponent(targetNext)}`;
+            window.location.replace(target);
+        };
+
+        const pad = (value) => String(Math.max(0, Number(value) || 0)).padStart(2, "0");
+
+        const renderCountdown = () => {
+            if (!launchAtMs || launchAtMs <= 0) {
+                if (fallback) fallback.hidden = false;
+                return;
+            }
+
+            const diff = Math.max(0, launchAtMs - Date.now());
+            const totalSec = Math.floor(diff / 1000);
+            const days = Math.floor(totalSec / 86400);
+            const hours = Math.floor((totalSec % 86400) / 3600);
+            const minutes = Math.floor((totalSec % 3600) / 60);
+            const seconds = totalSec % 60;
+
+            ids.days.textContent = pad(days);
+            ids.hours.textContent = pad(hours);
+            ids.minutes.textContent = pad(minutes);
+            ids.seconds.textContent = pad(seconds);
+        };
+
+        maybeBypassMaintenance();
+        renderCountdown();
+        window.setInterval(() => {
+            maybeBypassMaintenance();
+            renderCountdown();
+        }, 1000);
+        window.setInterval(() => {
+            if (!hasAdminLocalStorage()) {
+                syncDisabledState(false).catch(() => {});
+            }
+        }, 4500);
+    })();
+    </script>
+</body>
+</html>

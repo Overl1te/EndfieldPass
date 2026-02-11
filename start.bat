@@ -36,6 +36,14 @@ echo [EndfieldPass] Applying migrations...
 %PYTHON% manage.py migrate
 if errorlevel 1 goto :error
 
+echo [EndfieldPass] Bootstrapping app data...
+%PYTHON% manage.py bootstrap_app_data
+if errorlevel 1 goto :error
+
+echo [EndfieldPass] Ensuring superuser from .env...
+%PYTHON% manage.py ensure_superuser
+if errorlevel 1 goto :error
+
 echo [EndfieldPass] Starting server at http://127.0.0.1:8000/
 %PYTHON% manage.py runserver 127.0.0.1:8000
 goto :eof

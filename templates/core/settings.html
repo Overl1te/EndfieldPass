@@ -4,7 +4,11 @@
 {% block title %}{% t "title.settings" %} | EndfieldPass{% endblock %}
 
 {% block content %}
-<section class="settings-page">
+<section
+    class="settings-page"
+    data-cloud-auto-export-url="{% url 'cloud_auto_export_api' %}"
+    data-cloud-auto-import-url="{% url 'cloud_auto_import_api' %}"
+>
     <header class="page-header">
         <h1>{% t "settings.title" %}</h1>
     </header>
@@ -116,6 +120,9 @@
     const initSettingsLocalHistory = () => {
         const historyApi = window.endfieldPassHistory;
         if (!historyApi) return;
+        const pageRoot = document.querySelector(".settings-page");
+        const cloudAutoExportUrl = String(pageRoot?.dataset?.cloudAutoExportUrl || "{% url 'cloud_auto_export_api' %}");
+        const cloudAutoImportUrl = String(pageRoot?.dataset?.cloudAutoImportUrl || "{% url 'cloud_auto_import_api' %}");
 
         const exportBtn = document.getElementById("localHistoryExportBtn");
         const importForm = document.getElementById("localHistoryImportForm");
@@ -178,7 +185,7 @@
                 const payload = historyApi.readPayload();
                 if (!provider || !payload) return;
                 try {
-                    await fetch("/api/cloud/auto/export", {
+                    await fetch(cloudAutoExportUrl, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ provider, payload }),
@@ -194,7 +201,7 @@
                 const provider = String(providerInput?.value || "").trim().toLowerCase();
                 if (!provider) return;
                 try {
-                    const response = await fetch("/api/cloud/auto/import", {
+                    const response = await fetch(cloudAutoImportUrl, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ provider }),
@@ -214,7 +221,7 @@
                 const remoteRef = String(cloudUrlInput.value || "").trim();
                 if (!remoteRef) return;
                 try {
-                    const response = await fetch("/api/cloud/auto/import", {
+                    const response = await fetch(cloudAutoImportUrl, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ provider: "url", remote_ref: remoteRef }),

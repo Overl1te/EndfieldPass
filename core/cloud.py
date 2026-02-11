@@ -10,14 +10,20 @@ All raised errors use ``CloudIntegrationError`` with user-facing messages.
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 from urllib.parse import urlencode
+from urllib.parse import urlparse
 
 import requests
+from django.conf import settings
 
 
 SYNC_FOLDER_NAME = "EndfieldPass"
 SYNC_FILE_NAME = "history-latest.json"
+DIRECT_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+DIRECT_IMPORT_MAX_REDIRECTS = 5
 
 SYNC_PROVIDER_CHOICES = (
     ("google_drive", "Google Drive"),
@@ -31,6 +37,62 @@ CLOUD_PROVIDER_CHOICES = (
 
 class CloudIntegrationError(Exception):
     """Raised when cloud import/export or OAuth operation fails."""
+
+
+def _is_public_ip_address(value: str) -> bool:
+    try:
+        ip_value = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return False
+    return bool(ip_value.is_global)
+
+
+def _validate_direct_import_host(hostname: str):
+    host = str(hostname or "").strip().rstrip(".").lower()
+    if not host:
+        raise CloudIntegrationError("Direct import URL must include host.")
+    if host in {"localhost", "localhost.localdomain"}:
+        raise CloudIntegrationError("Direct import URL points to local network and is blocked.")
+    if host.endswith(".local"):
+        raise CloudIntegrationError("Direct import URL points to local network and is blocked.")
+
+    if _is_public_ip_address(host):
+        return
+
+    # If host is an IP but not public, block explicitly.
+    try:
+        ip_value = ipaddress.ip_address(host)
+        if not ip_value.is_global:
+            raise CloudIntegrationError("Direct import URL points to private network and is blocked.")
+    except ValueError:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise CloudIntegrationError("Failed to resolve direct import URL host.") from exc
+
+    addresses = {str(info[4][0] or "").strip() for info in infos if info and len(info) > 4 and info[4]}
+    if not addresses:
+        raise CloudIntegrationError("Failed to resolve direct import URL host.")
+
+    for address in addresses:
+        if not _is_public_ip_address(address):
+            raise CloudIntegrationError("Direct import URL points to private network and is blocked.")
+
+
+def _validate_direct_import_url(remote_ref: str):
+    parsed = urlparse(str(remote_ref or "").strip())
+    if parsed.scheme not in {"https", "http"}:
+        raise CloudIntegrationError("Direct import requires URL starting with http:// or https://")
+    if parsed.scheme != "https" and not bool(getattr(settings, "DEBUG", False)):
+        raise CloudIntegrationError("Direct import via plain HTTP is disabled.")
+    if parsed.username or parsed.password:
+        raise CloudIntegrationError("Direct import URL with credentials is not allowed.")
+    if not parsed.hostname:
+        raise CloudIntegrationError("Direct import URL must include host.")
+    _validate_direct_import_host(parsed.hostname)
+    return parsed
 
 
 def _extract_error_text(response):
@@ -492,13 +554,45 @@ def _yandex_download_json(token):
 def _import_from_direct_url(remote_ref):
     if not remote_ref:
         raise CloudIntegrationError("Provide direct JSON URL.")
-    if not remote_ref.startswith(("http://", "https://")):
-        raise CloudIntegrationError("Direct import requires URL starting with http:// or https://")
+    _validate_direct_import_url(remote_ref)
 
-    response = _request("GET", remote_ref, "Failed to download file by URL", timeout=60)
+    response = _request(
+        "GET",
+        remote_ref,
+        "Failed to download file by URL",
+        timeout=60,
+        stream=True,
+        allow_redirects=True,
+        headers={
+            "Accept": "application/json, text/plain;q=0.9, */*;q=0.1",
+        },
+    )
+    if len(response.history or []) > DIRECT_IMPORT_MAX_REDIRECTS:
+        raise CloudIntegrationError("Too many redirects while downloading direct JSON URL.")
+    for hop in [*(response.history or []), response]:
+        _validate_direct_import_url(getattr(hop, "url", ""))
     if response.status_code >= 300:
         _raise_cloud_error(response, "Failed to download file by URL")
-    return _json_from_response(response, "URL response is not valid JSON.")
+
+    content_type = str((response.headers or {}).get("Content-Type") or "").lower()
+    if content_type and ("json" not in content_type and "text/plain" not in content_type):
+        raise CloudIntegrationError("URL response content type is not JSON.")
+
+    raw_content = bytearray()
+    for chunk in response.iter_content(chunk_size=65536):
+        if not chunk:
+            continue
+        raw_content.extend(chunk)
+        if len(raw_content) > DIRECT_IMPORT_MAX_BYTES:
+            raise CloudIntegrationError("Direct JSON payload is too large.")
+
+    try:
+        return json.loads(bytes(raw_content).decode("utf-8"))
+    except Exception:
+        try:
+            return json.loads(bytes(raw_content).decode("utf-8-sig"))
+        except Exception as exc:
+            raise CloudIntegrationError("URL response is not valid JSON.") from exc
 
 
 def export_payload_to_cloud(provider, token, payload):

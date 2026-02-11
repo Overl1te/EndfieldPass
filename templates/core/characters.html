@@ -16,6 +16,103 @@
         </h1>
     </header>
 
+    <div class="catalog-filters" data-characters-filters>
+        <div class="catalog-filter-group" data-character-filter-group="element">
+            <span class="catalog-filter-title">{% t "characters.filters.element" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="heat" aria-pressed="false">
+                    <img src="{% static 'img/type/Heaticon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.element.heat" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="cryo" aria-pressed="false">
+                    <img src="{% static 'img/type/Cryoicon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.element.cryo" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="electric" aria-pressed="false">
+                    <img src="{% static 'img/type/Electricicon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.element.electric" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="nature" aria-pressed="false">
+                    <img src="{% static 'img/type/Natureicon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.element.nature" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="physical" aria-pressed="false">
+                    <img src="{% static 'img/type/Physicalicon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.element.physical" %}</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="catalog-filter-group" data-character-filter-group="weapon">
+            <span class="catalog-filter-title">{% t "characters.filters.weapon" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="short" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Short-Weapon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.short" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="great" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Great-Weapon.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.great" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="guns" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Guns.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.guns" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="polearms" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Polearms.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.polearms" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="orbiters" aria-pressed="false">
+                    <img src="{% static 'img/weapon/Orbiters.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.weapon.orbiters" %}</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="catalog-filter-group" data-character-filter-group="role">
+            <span class="catalog-filter-title">{% t "characters.filters.role" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="caster" aria-pressed="false">
+                    <img src="{% static 'img/role/Caster.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.caster" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="defender" aria-pressed="false">
+                    <img src="{% static 'img/role/Defender.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.defender" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="guard" aria-pressed="false">
+                    <img src="{% static 'img/role/Guard.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.guard" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="striker" aria-pressed="false">
+                    <img src="{% static 'img/role/Striker.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.striker" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="support" aria-pressed="false">
+                    <img src="{% static 'img/role/Support.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.support" %}</span>
+                </button>
+                <button type="button" class="catalog-pill" data-filter-value="vanguard" aria-pressed="false">
+                    <img src="{% static 'img/role/Vanguard.webp' %}" alt="" loading="lazy">
+                    <span>{% t "character.role.vanguard" %}</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="catalog-filter-group" data-character-filter-group="rarity">
+            <span class="catalog-filter-title">{% t "characters.filters.rarity" %}</span>
+            <div class="catalog-filter-pills">
+                <button type="button" class="catalog-pill is-active" data-filter-value="all" aria-pressed="true">{% t "dashboard.filter.all" %}</button>
+                <button type="button" class="catalog-pill" data-filter-value="6" aria-pressed="false"><span>6★</span></button>
+                <button type="button" class="catalog-pill" data-filter-value="5" aria-pressed="false"><span>5★</span></button>
+                <button type="button" class="catalog-pill" data-filter-value="4" aria-pressed="false"><span>4★</span></button>
+            </div>
+        </div>
+    </div>
+
     <section class="characters-grid">
         {% for character in characters %}
         <article
@@ -24,6 +121,10 @@
             data-character-name="{{ character.name }}"
             data-character-aliases="{{ character.aliases|join:'|' }}"
             data-character-icon="{{ character.icon }}"
+            data-character-element="{{ character.element }}"
+            data-character-weapon="{{ character.weapon }}"
+            data-character-role="{{ character.role }}"
+            data-character-rarity="{{ character.rarity }}"
         >
             <div class="character-topline">
                 <span class="character-element">
@@ -31,7 +132,7 @@
                     {{ character.element_label }}
                 </span>
                 {% if character.is_obtained %}
-                <span class="character-status is-obtained" data-character-status>{% t "characters.obtained" %} &middot; {{ character.obtained_date }}</span>
+                <span class="character-status is-obtained" data-character-status>{% t "characters.obtained" %} · {{ character.obtained_date }}</span>
                 {% else %}
                 <span class="character-status is-missing" data-character-status>{% t "characters.missing" %}</span>
                 {% endif %}
@@ -71,6 +172,53 @@
     const obtainedLabel = "{% t 'characters.obtained' %}";
     const missingLabel = "{% t 'characters.missing' %}";
     const unknownDateLabel = "{% t 'characters.date_unknown' %}";
+    const elementFilterGroup = document.querySelector('[data-character-filter-group="element"]');
+    const weaponFilterGroup = document.querySelector('[data-character-filter-group="weapon"]');
+    const roleFilterGroup = document.querySelector('[data-character-filter-group="role"]');
+    const rarityFilterGroup = document.querySelector('[data-character-filter-group="rarity"]');
+
+    const getActiveGroupValue = (group) => {
+        if (!group) return "all";
+        const active = group.querySelector(".catalog-pill.is-active[data-filter-value]");
+        return String(active?.dataset.filterValue || "all").trim().toLowerCase();
+    };
+
+    const bindFilterGroup = (group, onChange) => {
+        if (!group) return;
+        const buttons = group.querySelectorAll(".catalog-pill[data-filter-value]");
+        buttons.forEach((button) => {
+            button.addEventListener("click", () => {
+                if (button.classList.contains("is-active")) return;
+                buttons.forEach((candidate) => {
+                    candidate.classList.remove("is-active");
+                    candidate.setAttribute("aria-pressed", "false");
+                });
+                button.classList.add("is-active");
+                button.setAttribute("aria-pressed", "true");
+                onChange();
+            });
+        });
+    };
+
+    const applyCharacterFilters = () => {
+        const selectedElement = getActiveGroupValue(elementFilterGroup);
+        const selectedWeapon = getActiveGroupValue(weaponFilterGroup);
+        const selectedRole = getActiveGroupValue(roleFilterGroup);
+        const selectedRarity = getActiveGroupValue(rarityFilterGroup);
+
+        document.querySelectorAll("[data-character-card]").forEach((card) => {
+            const elementValue = String(card.dataset.characterElement || "").trim().toLowerCase();
+            const weaponValue = String(card.dataset.characterWeapon || "").trim().toLowerCase();
+            const roleValue = String(card.dataset.characterRole || "").trim().toLowerCase();
+            const rarityValue = String(card.dataset.characterRarity || "").trim();
+
+            const elementMatch = selectedElement === "all" || selectedElement === elementValue;
+            const weaponMatch = selectedWeapon === "all" || selectedWeapon === weaponValue;
+            const roleMatch = selectedRole === "all" || selectedRole === roleValue;
+            const rarityMatch = selectedRarity === "all" || selectedRarity === rarityValue;
+            card.hidden = !(elementMatch && weaponMatch && roleMatch && rarityMatch);
+        });
+    };
 
     const normalize = (value) => {
         const source = String(value || "").trim().toLowerCase().normalize("NFKC");
@@ -185,10 +333,15 @@
             statusNode.classList.add("is-missing");
             statusNode.textContent = missingLabel;
         });
+        applyCharacterFilters();
     };
 
     const bootCharacters = () => {
         renderCharacters();
+        bindFilterGroup(elementFilterGroup, applyCharacterFilters);
+        bindFilterGroup(weaponFilterGroup, applyCharacterFilters);
+        bindFilterGroup(roleFilterGroup, applyCharacterFilters);
+        bindFilterGroup(rarityFilterGroup, applyCharacterFilters);
         window.addEventListener("endfieldpass:history-updated", renderCharacters);
     };
 
